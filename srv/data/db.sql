@@ -13,10 +13,11 @@ create table if not exists account
   etc_json text
 );
 
+-- two entries in this table per transfer
 create table if not exists transfer
 (
-  debit text not null,
-  credit text not null,
+  pan text not null,
+  tr_uuid text not null, -- uuid for the transaction pair
   amount int not null,
   timestamp int not null,
   note text,
@@ -24,4 +25,13 @@ create table if not exists transfer
 );
 
 insert into account (pan, name, secret)
-values ('8997986672200001', 'root', '1234');
+values ('1001', 'root', '1234');
+
+insert into account (pan, name, secret)
+values ('1002', 'user', '1234');
+
+insert into transfer (pan, tr_uuid, amount, timestamp, note)
+values ('1001', 'fe886fa4-cbe4-4e50-a303-d4b4aa63c143', -100, 1654791940, 'opening deposit');
+
+insert into transfer (pan, tr_uuid, amount, timestamp, note)
+values ('1002', 'fe886fa4-cbe4-4e50-a303-d4b4aa63c143', 100, 1654791940, 'welcome to toorcamp');

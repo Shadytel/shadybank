@@ -1,0 +1,27 @@
+{% extends "site.html" %}
+{% block title %}Shady Bank: account history{% endblock title %}
+{% block headline %}Shady Bank &mdash; Account History{% endblock headline %}
+
+{% block body %}
+<table>
+  <tr>
+    <th></th>
+    <th>balance</th>
+  </tr>
+  {% for t in data.transactions %}
+  <tr>
+    <td>
+      {{t["timestamp_human"]}} /
+      <!-- counterparty: {{t["counterparty"]}} / -->
+      {% if t["amount"] > 0 %} credit +⋎{{t["amount"]}}
+      {% else %} debit -⋎{{t["amount"]}}
+      {% endif %}
+      <br/>
+      <em>{{t["note"]}}</em>
+    </td>
+    <td>⋎{{t["balance"]}}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock body %}
+
