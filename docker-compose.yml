@@ -2,7 +2,6 @@ version: '3.4'
 
 services:
   api-endpoint:
-    image: shadybucks-api-endpoint
     build:
       context: .
       dockerfile: ./Dockerfile
