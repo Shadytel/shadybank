@@ -1,0 +1,40 @@
+version: '3.4'
+
+services:
+  api-endpoint:
+    image: shadybucks-api-endpoint
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    environment:
+      PGHOST: db
+      PGUSER: shadybucks
+      PGPASSWORD: N9aj8vtIaaYsAY52gdSXjOdgdzY8BTiN
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  db:
+    image: postgres
+    environment:
+      POSTGRES_USER: shadybucks
+      POSTGRES_PASSWORD: N9aj8vtIaaYsAY52gdSXjOdgdzY8BTiN
+      POSTGRES_DB: shadybucks
+    volumes:
+      - ./srv/data/postgres.sql:/docker-entrypoint-initdb.d/create_db.sql
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-q", "-d", "shadybucks", "-U", "shadybucks" ]
+      timeout: 45s
+      interval: 10s
+      retries: 10
+  redis:
+    image: redis
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli ping | grep PONG" ]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
