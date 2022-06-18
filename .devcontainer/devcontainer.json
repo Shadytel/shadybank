@@ -3,5 +3,8 @@
     "dockerComposeFile": ["../docker-compose.yml", "docker-compose.extend.yml"],
     "service": "api-endpoint",
     "workspaceFolder": "/workspace",
-    "shutdownAction": "stopCompose"
+    "shutdownAction": "stopCompose",
+	"extensions": [
+		"ms-python.python"
+	]
 }

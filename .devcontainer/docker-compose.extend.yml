@@ -1,5 +1,10 @@
 version: '3'
 services:
   api-endpoint:
-    volumes:
-      - .:/workspace:cached
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    command: /bin/sh -c "while sleep 1000; do :; done"
+    ports:
+      - 8080:8080
+      - 5678:5678
