@@ -10,8 +10,37 @@ import base64
 import hashlib
 from passlib.hash import argon2
 import os
+import re
 import secrets
 import time
+
+track1_re = re.compile(r'(?a)%B(?P<pan>\d{8,19})\^(?P<name>[\w/]*)\^(?P<exp>\d{4})(?P<svc>\d{3})(?P<dd1>.*?)\?')
+track2_re = re.compile(r'(?a);(?P<pan>\d{8,19})=(?P<exp>\d{4})(?P<svc>\d{3})(?P<dd2>.*?)\?')
+
+def parse_track1(track):
+    m = track1_re.search(track)
+    if not m:
+        return None
+    return {
+        'track': 1,
+        'pan': m.group('pan'),
+        'name': m.group('name'),
+        'exp': m.group('exp'),
+        'svc': m.group('svc'),
+        'dd1': m.group('dd1')
+    }
+
+def parse_track2(track):
+    m = track2_re.search(track)
+    if not m:
+        return None
+    return {
+        'track': 2,
+        'pan': m.group('pan'),
+        'exp': m.group('exp'),
+        'svc': m.group('svc'),
+        'dd2': m.group('dd2')
+    }
 
 class ShadyBucksAPIDaemon:
     def __init__(self, **kwargs):
@@ -25,7 +54,7 @@ class ShadyBucksAPIDaemon:
         #self._app.add_routes([web.get('/api/transactions', self.get_transactions)])
 
         # Merchant APIs
-        #self._app.add_routes([web.post('/api/authorize', self.post_authorize)])
+        self._app.add_routes([web.post('/api/authorize', self.post_authorize)])
         #self._app.add_routes([web.post('/api/capture', self.post_capture)])
         #self._app.add_routes([web.post('/api/void', self.post_void)])
         #self._app.add_routes([web.post('/api/reverse', self.post_reverse)])
@@ -89,10 +118,10 @@ class ShadyBucksAPIDaemon:
         return resp
 
     async def get_check_credentials(self, request):
-        await self.get_auth_account(request)
+        await self._get_auth_account(request)
         return web.Response(status=204)
 
-    async def get_auth_account(self, request):
+    async def _get_auth_account(self, request):
         auth_token = self.get_request_auth_token(request)
         if auth_token:
             aid = await self._redis_pool.get('auth_token:{}'.format(auth_token))
@@ -100,27 +129,46 @@ class ShadyBucksAPIDaemon:
         raise web.HTTPUnauthorized()
 
     async def get_balance(self, request):
-        acct = await self.get_auth_account(request)
+        acct = await self._get_auth_account(request)
         balance = await self._psql_pool.fetchval('SELECT balance FROM accounts WHERE id = $1', acct);
         return web.json_response({ 'account': acct, 'balance': int(balance * 100) })
 
     #async def get_transactions(self, request):
-    #    acct = await self.get_auth_account()
+    #    acct = await self._get_auth_account()
     #    transactions = await self._psql_pool.fetch('SELECT s')
 
-    async def _get_customer(self, request):
-        if 'magstripe' in request:
-            # Parse magstripe data into track 1 and track 3
-            pass
+    async def _get_account_from_magstripe(self, request):
+        card_data = None
+        args = await request.post()
 
-        if 'track1' in request:
-            card_data = parse_track(request.track1)
-            card_data = self._psql_pool.fetch()
-        raise web.HTTPBadRequest()
-    
-    #async def post_authorize(self, request):
-    #    merchant = await self.get_auth_account()
-    #    customer = await self._get_customer(request)
+        if 'magstripe' in args:
+            card_data = parse_track1(args['magstripe'])
+            if not card_data:
+                card_data = parse_track2(args['magstripe'])
+        elif 'track1' in args:
+            card_data = parse_track1(args['track1'])
+        elif 'track2' in args:
+            card_data = parse_track2(args['track2'])
+        
+        if not card_data:
+            raise web.HTTPBadRequest()
+        
+        card_row = await self._psql_pool.fetchrow('SELECT * FROM cards WHERE pan = $1 AND expires = $2',
+            card_data['pan'], card_data['exp'])
+        if not card_row:
+            raise web.HTTPNotFound()
+        if card_data['track'] == 1 and card_data['dd1'] == card_row['dd1']:
+            return { 'account': card_row['account_id'], 'card': card_data }
+        elif card_data['track'] == 2 and card_data['dd2'] == card_row['dd2']:
+            return { 'account': card_row['account_id'], 'card': card_data }
+        else:
+            raise web.HTTPNotFound()
+
+    async def post_authorize(self, request):
+        merchant = await self._get_auth_account(request)
+        cust_acct = await self._get_account_from_magstripe(request)
+        # TODO: Implement
+        return web.Response(status=204)
 
 def main():
     arg_parser = argparse.ArgumentParser(description='ShadyBucks API server')

@@ -7,7 +7,7 @@ admin bool not null default false, special bool not null default false);
 
 create type card_status as enum ('unallocated', 'issued', 'activated', 'blocked', 'lost', 'stolen');
 
-create table cards (pan varchar(19) NOT NULL PRIMARY KEY, account_id integer, name varchar(80), expire timestamp, 
+create table cards (pan varchar(19) NOT NULL PRIMARY KEY, account_id integer, name varchar(80), expires char(4) not null, 
 dd1 varchar(31), dd2 numeric(31), status card_status);
 
 create type secrets_type as enum ('pin', 'password', 'totp', 'webauthn');
