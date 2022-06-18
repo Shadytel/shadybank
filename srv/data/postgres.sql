@@ -1,9 +1,9 @@
-create table customers (id SERIAL PRIMARY KEY, shadytel_customer_id int, beerocracy_id int, name text, created_at 
+create table customers (id SERIAL PRIMARY KEY, shadytel_customer_id int, beerocracy_id int, name varchar(80), created_at 
 timestamp not null default NOW(), last_updated timestamp);
 
-create table accounts (id SERIAL PRIMARY KEY, balance numeric(8,2) not null default 0.00, customer_id int not null, created_at 
-timestamp not null default NOW(), last_updated timestamp, partner bool not null default false, admin bool not null default false,
-special bool not null default false);
+create table accounts (id SERIAL PRIMARY KEY, name varchar(80), balance numeric(8,2) not null default 0.00, customer_id int not null,
+created_at  timestamp not null default NOW(), last_updated timestamp, partner bool not null default false,
+admin bool not null default false, special bool not null default false);
 
 create type card_status as enum ('unallocated', 'issued', 'activated', 'blocked', 'lost', 'stolen');
 
