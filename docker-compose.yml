@@ -23,7 +23,7 @@ services:
       POSTGRES_PASSWORD: N9aj8vtIaaYsAY52gdSXjOdgdzY8BTiN
       POSTGRES_DB: shadybucks
     volumes:
-      - ./srv/data/postgres.sql:/docker-entrypoint-initdb.d/create_db.sql
+      - ./srv/data/postgres.sql:/docker-entrypoint-initdb.d/00-create_db.sql
     healthcheck:
       test: [ "CMD", "pg_isready", "-q", "-d", "shadybucks", "-U", "shadybucks" ]
       timeout: 45s

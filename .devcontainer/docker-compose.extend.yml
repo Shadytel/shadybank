@@ -8,3 +8,6 @@ services:
     ports:
       - 8080:8080
       - 5678:5678
+  db:
+    volumes:
+      - ./srv/data/testdata.sql:/docker-entrypoint-initdb.d/99-testdata.sql
