@@ -55,7 +55,7 @@ class ShadyBucksAPIDaemon:
 
         # Merchant APIs
         self._app.add_routes([web.post('/api/authorize', self.post_authorize)])
-        #self._app.add_routes([web.post('/api/capture', self.post_capture)])
+        self._app.add_routes([web.post('/api/capture', self.post_capture)])
         #self._app.add_routes([web.post('/api/void', self.post_void)])
         #self._app.add_routes([web.post('/api/reverse', self.post_reverse)])
         #self._app.add_routes([web.post('/api/credit', self.post_credit)])
@@ -134,7 +134,7 @@ class ShadyBucksAPIDaemon:
     async def get_balance(self, request):
         acct = await self._get_auth_account(request)
         balance, available = await self._psql_pool.fetchrow('SELECT balance, available FROM accounts WHERE id = $1', acct);
-        return web.json_response({ 'account': acct, 'balance': int(balance * 100), 'available': int(available * 100) })
+        return web.json_response({ 'account': acct, 'balance': float(balance), 'available': float(available) })
 
     #async def get_transactions(self, request):
     #    acct = await self._get_auth_account()
@@ -170,7 +170,7 @@ class ShadyBucksAPIDaemon:
         args = await request.post()
         if not 'amount' in args:
             raise web.HTTPBadRequest()
-        amount = int(args['amount'])
+        amount = float(args['amount'])
         if amount <= 0:
             raise web.HTTPBadRequest()
         merchant_data = await self._get_account_data(await self._get_auth_account(request))
@@ -181,10 +181,42 @@ class ShadyBucksAPIDaemon:
         auth_code = str(secrets.randbelow(1000000)).zfill(6)
         async with self._psql_pool.acquire() as con:
             async with con.transaction():
-                await con.execute('INSERT INTO authorizations (pan, auth_code, debit_account, credit_account, authorized_debit_amount)' \
-                    'VALUES($1, $2, $3, $4, $5 / 100)', card_data['card']['pan'], auth_code, cust_data['id'], merchant_data['id'], amount);
-                await con.execute('UPDATE accounts SET available = available - ($1 / 100), last_updated = NOW() WHERE id = $2',
+                await con.execute('INSERT INTO authorizations (pan, auth_code, debit_account, credit_account, authorized_debit_amount) ' \
+                    'VALUES($1, $2, $3, $4, $5)', card_data['card']['pan'], auth_code, cust_data['id'], merchant_data['id'], amount);
+                await con.execute('UPDATE accounts SET available = available - $1, last_updated = NOW() WHERE id = $2',
                     amount, cust_data['id'])  
+        return web.Response(status=204)
+
+    async def post_capture(self, request):
+        args = await request.post()
+        if (not 'pan' in args) or (not 'amount' in args) or (not 'auth_code' in args):
+            raise web.HTTPBadRequest()
+        amount = float(args['amount'])
+        if amount <= 0:
+            raise web.HTTPBadRequest()
+        merchant_data = await self._get_account_data(await self._get_auth_account(request))
+        async with self._psql_pool.acquire() as con:
+            async with con.transaction():
+                auth_row = await con.fetchrow('SELECT * from authorizations WHERE pan = $1 AND credit_account = $2 AND auth_code = $3',
+                    args['pan'], merchant_data['id'], args['auth_code'])
+                if not auth_row:
+                    raise web.HTTPNotFound()
+                if amount > auth_row['authorized_debit_amount']:
+                    raise web.HTTPForbidden()
+                await con.execute('DELETE FROM authorizations WHERE id = $1', auth_row['id']);
+                await con.execute('UPDATE accounts SET balance = balance - $1, ' \
+                    'available = available + ($2 - $1), last_updated = NOW() WHERE id = $3',
+                    amount, auth_row['authorized_debit_amount'], auth_row['debit_account'])
+                await con.execute('UPDATE accounts SET balance = balance + $1, ' \
+                    'available = available + $1, last_updated = NOW() WHERE id = $2',
+                    amount, auth_row['credit_account'])
+                if 'description' in args:
+                    description = args['description']
+                else:
+                    description = None
+                await con.execute('INSERT INTO transactions (debit_account, credit_account, amount, pan, auth_code, ' \
+                    'type, description) VALUES($1, $2, $3, $4, $5, $6, $7)', auth_row['debit_account'],
+                    auth_row['credit_account'], amount, args['pan'], args['auth_code'], "purchase", description)  
         return web.Response(status=204)
 
 def main():
