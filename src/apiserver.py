@@ -77,7 +77,7 @@ class ShadyBucksAPIDaemon:
         resp = web.Response(status=201, text=auth_token)
         return resp
 
-    def get_request_auth_token(self, request):
+    def _get_request_auth_token(self, request):
         if not 'Authorization' in request.headers:
             raise web.HTTPUnauthorized()
         
@@ -108,7 +108,7 @@ class ShadyBucksAPIDaemon:
 
     async def post_logout(self, request):
         try:
-            auth_token = self.get_request_auth_token(request)
+            auth_token = self._get_request_auth_token(request)
             # TODO: Check for valid auth_token format?
             if auth_token:
                 await self._redis_pool.delete('auth_token:{}'.format(auth_token))
@@ -122,24 +122,26 @@ class ShadyBucksAPIDaemon:
         return web.Response(status=204)
 
     async def _get_auth_account(self, request):
-        auth_token = self.get_request_auth_token(request)
+        auth_token = self._get_request_auth_token(request)
         if auth_token:
             aid = await self._redis_pool.get('auth_token:{}'.format(auth_token))
             return int(aid)
         raise web.HTTPUnauthorized()
 
+    async def _get_account_data(self, account_id):
+        return await self._psql_pool.fetchrow('SELECT * FROM accounts WHERE id = $1', account_id);
+
     async def get_balance(self, request):
         acct = await self._get_auth_account(request)
-        balance = await self._psql_pool.fetchval('SELECT balance FROM accounts WHERE id = $1', acct);
-        return web.json_response({ 'account': acct, 'balance': int(balance * 100) })
+        balance, available = await self._psql_pool.fetchrow('SELECT balance, available FROM accounts WHERE id = $1', acct);
+        return web.json_response({ 'account': acct, 'balance': int(balance * 100), 'available': int(available * 100) })
 
     #async def get_transactions(self, request):
     #    acct = await self._get_auth_account()
     #    transactions = await self._psql_pool.fetch('SELECT s')
 
-    async def _get_account_from_magstripe(self, request):
+    async def _get_account_from_magstripe(self, args):
         card_data = None
-        args = await request.post()
 
         if 'magstripe' in args:
             card_data = parse_track1(args['magstripe'])
@@ -165,9 +167,24 @@ class ShadyBucksAPIDaemon:
             raise web.HTTPNotFound()
 
     async def post_authorize(self, request):
-        merchant = await self._get_auth_account(request)
-        cust_acct = await self._get_account_from_magstripe(request)
-        # TODO: Implement
+        args = await request.post()
+        if not 'amount' in args:
+            raise web.HTTPBadRequest()
+        amount = int(args['amount'])
+        if amount <= 0:
+            raise web.HTTPBadRequest()
+        merchant_data = await self._get_account_data(await self._get_auth_account(request))
+        card_data = await self._get_account_from_magstripe(args)
+        cust_data = await self._get_account_data(card_data['account'])
+        if amount > cust_data['available']:
+            raise web.HTTPForbidden()
+        auth_code = str(secrets.randbelow(1000000)).zfill(6)
+        async with self._psql_pool.acquire() as con:
+            async with con.transaction():
+                await con.execute('INSERT INTO authorizations (pan, auth_code, debit_account, credit_account, authorized_debit_amount)' \
+                    'VALUES($1, $2, $3, $4, $5 / 100)', card_data['card']['pan'], auth_code, cust_data['id'], merchant_data['id'], amount);
+                await con.execute('UPDATE accounts SET available = available - ($1 / 100), last_updated = NOW() WHERE id = $2',
+                    amount, cust_data['id'])  
         return web.Response(status=204)
 
 def main():
