@@ -9,6 +9,7 @@ import asyncpg
 import base64
 import hashlib
 from passlib.hash import argon2
+import pyotp
 import os
 import re
 import secrets
@@ -56,9 +57,9 @@ class ShadyBucksAPIDaemon:
         # Merchant APIs
         self._app.add_routes([web.post('/api/authorize', self.post_authorize)])
         self._app.add_routes([web.post('/api/capture', self.post_capture)])
-        #self._app.add_routes([web.post('/api/void', self.post_void)])
-        #self._app.add_routes([web.post('/api/reverse', self.post_reverse)])
-        #self._app.add_routes([web.post('/api/credit', self.post_credit)])
+        self._app.add_routes([web.post('/api/void', self.post_void)])
+        self._app.add_routes([web.post('/api/reverse', self.post_reverse)])
+        self._app.add_routes([web.post('/api/credit', self.post_credit)])
 
         self._app.add_routes([web.static('/static', os.path.join(os.getcwd() ,'website/static'))])
 
@@ -103,6 +104,10 @@ class ShadyBucksAPIDaemon:
             for auth_row in auth_rows:
                 if 'password' in args and auth_row['type'] == 'password':
                     if argon2.verify(args['password'], auth_row['secret']):
+                        return await self.handle_login_success(request, auth_row)
+                if 'otp' in args and auth_row['type'] == 'totp':
+                    otp_obj = pyotp.TOTP(auth_row['secret'], interval=30)
+                    if otp_obj.verify(args['otp'], valid_window=2):
                         return await self.handle_login_success(request, auth_row)
         raise web.HTTPUnauthorized()
 
@@ -209,14 +214,14 @@ class ShadyBucksAPIDaemon:
         merchant_data = await self._get_account_data(await self._get_auth_account(request))
         async with self._psql_pool.acquire() as con:
             async with con.transaction():
-                auth_row = await con.fetchrow('SELECT * from authorizations WHERE credit_account = $1 " . \
-                    "AND auth_code = $2 AND expires < NOW()',
+                auth_row = await con.fetchrow('SELECT * from authorizations WHERE credit_account = $1 ' \
+                    'AND auth_code = $2 AND expires > NOW()',
                     merchant_data['id'], args['auth_code'])
                 if not auth_row:
                     raise web.HTTPNotFound()
                 if amount > auth_row['authorized_debit_amount']:
                     raise web.HTTPForbidden()
-                await con.execute('UPDATE authorizations set status = "CAPTURED" WHERE id = $1', auth_row['id']);
+                await con.execute('UPDATE authorizations set status = \'posted\' WHERE id = $1', auth_row['id']);
                 await con.execute('UPDATE accounts SET balance = balance - $1, ' \
                     'available = available + ($2 - $1), last_updated = NOW() WHERE id = $3',
                     amount, auth_row['authorized_debit_amount'], auth_row['debit_account'])
@@ -230,6 +235,87 @@ class ShadyBucksAPIDaemon:
                 await con.execute('INSERT INTO transactions (debit_account, credit_account, amount, pan, auth_code, ' \
                     'type, description) VALUES($1, $2, $3, $4, $5, $6, $7)', auth_row['debit_account'],
                     auth_row['credit_account'], amount, auth_row['pan'], args['auth_code'], "purchase", description)  
+        return web.Response(status=204)
+
+    async def post_void(self, request):
+        args = await request.post()
+        if (not 'auth_code' in args):
+            raise web.HTTPBadRequest()
+        merchant_data = await self._get_account_data(await self._get_auth_account(request))
+        async with self._psql_pool.acquire() as con:
+            async with con.transaction():
+                auth_row = await con.fetchrow('SELECT * from authorizations WHERE credit_account = $1 ' \
+                    'AND auth_code = $2 AND status = \'pending\'',
+                    merchant_data['id'], args['auth_code'])
+                if not auth_row:
+                    raise web.HTTPNotFound()
+                await con.execute('UPDATE authorizations set status = \'voided\' WHERE id = $1', auth_row['id']);
+                await con.execute('UPDATE accounts SET available = available + $1, last_updated = NOW() WHERE id = $2',
+                    auth_row['authorized_debit_amount'], auth_row['debit_account']) 
+        return web.Response(status=204)
+
+    async def post_reverse(self, request):
+        args = await request.post()
+        if (not 'auth_code' in args):
+            raise web.HTTPBadRequest()
+        merchant_data = await self._get_account_data(await self._get_auth_account(request))
+        async with self._psql_pool.acquire() as con:
+            async with con.transaction():
+                auth_row = await con.fetchrow('SELECT * from authorizations WHERE credit_account = $1 ' \
+                    'AND auth_code = $2 AND status = \'posted\'',
+                    merchant_data['id'], args['auth_code'])
+                if not auth_row:
+                    raise web.HTTPNotFound()
+                transaction_row = await con.fetchrow('SELECT * from transactions WHERE credit_account = $1 ' \
+                    'AND auth_code = $2',
+                    merchant_data['id'], args['auth_code'])
+                if not transaction_row:
+                    raise web.HTTPNotFound()
+                await con.execute('UPDATE authorizations set status = \'reversed\' WHERE credit_account = $1 and auth_code = $2',
+                    merchant_data['id'], args['auth_code']);
+                await con.execute('UPDATE accounts SET balance = balance + $1, ' \
+                    'available = available + $1, last_updated = NOW() WHERE id = $2',
+                    transaction_row['amount'], transaction_row['debit_account']) 
+                await con.execute('UPDATE accounts SET balance = balance - $1, ' \
+                    'available = available - $1, last_updated = NOW() WHERE id = $2',
+                    transaction_row['amount'], transaction_row['credit_account'])
+                if 'description' in args:
+                    description = args['description']
+                else:
+                    description = None
+                await con.execute('INSERT INTO transactions (debit_account, credit_account, amount, pan, ' \
+                    'related_transaction, type, description) VALUES($1, $2, $3, $4, $5, $6, $7)',
+                    transaction_row['credit_account'], transaction_row['debit_account'], transaction_row['amount'],
+                    transaction_row['pan'], transaction_row['id'], "refund", description)
+        return web.Response(status=204)
+
+    async def post_credit(self, request):
+        args = await request.post()
+        if not 'amount' in args:
+            raise web.HTTPBadRequest()
+        amount = float(args['amount'])
+        if amount <= 0:
+            raise web.HTTPBadRequest()
+        merchant_data = await self._get_account_data(await self._get_auth_account(request))
+        if not (merchant_data['partner'] or merchant_data['admin'] or merchant_data['special']):
+            raise web.HTTPForbidden()
+        card_data = await self._get_account_from_magstripe(args)
+        cust_data = await self._get_account_data(card_data['account'])
+        async with self._psql_pool.acquire() as con:
+            async with con.transaction():
+                await con.execute('UPDATE accounts SET balance = balance - $1, ' \
+                    'available = available - $1, last_updated = NOW() WHERE id = $2',
+                    amount, merchant_data['id'])
+                await con.execute('UPDATE accounts SET balance = balance + $1, ' \
+                    'available = available + $1, last_updated = NOW() WHERE id = $2',
+                    amount, cust_data['id'])
+                if 'description' in args:
+                    description = args['description']
+                else:
+                    description = None
+                await con.execute('INSERT INTO transactions (debit_account, credit_account, amount, pan, ' \
+                    'type, description) VALUES($1, $2, $3, $4, $5, $6)', merchant_data['id'],
+                    cust_data['id'], amount, card_data['card']['pan'], "credit_points", description)  
         return web.Response(status=204)
 
 def main():

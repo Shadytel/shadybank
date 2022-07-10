@@ -29,5 +29,6 @@ create table authorizations (id serial primary key, pan varchar(19) not null, au
 debit_account int, credit_account int, authorized_debit_amount numeric(8,2), timestamp timestamp not null default NOW(), 
 expires timestamp default NOW() + INTERVAL '24 hours', status auth_status not null default 'pending',
 constraint fk_debit_aid foreign key (debit_account) references accounts(id),
-constraint fk_credit_aid foreign key (credit_account) references accounts(id));
+constraint fk_credit_aid foreign key (credit_account) references accounts(id),
+unique(credit_account, auth_code));
 
