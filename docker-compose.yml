@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: ./Dockerfile.frontend
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8020:8080"
     depends_on:
       api-endpoint:
         condition: service_started
@@ -19,7 +19,7 @@ services:
       PGUSER: shadybucks
       PGPASSWORD: N9aj8vtIaaYsAY52gdSXjOdgdzY8BTiN
     ports:
-      - "8086:8080"
+      - "127.0.0.1:8021:8080"
     depends_on:
       db:
         condition: service_healthy
