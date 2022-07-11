@@ -1,6 +1,9 @@
 insert into accounts (name, special) values ('Shadybucks Awarded', true);
 insert into accounts (name, partner) values ('Shadytel', true);
 insert into accounts (name, partner) values ('Beerocracy', true);
+insert into accounts (name, partner) values ('Milliways', true);
+insert into accounts (name, partner) values ('LOUDner', true);
+insert into accounts (name, partner) values ('Taco Drone', true);
 
 
 insert into customers (name) values ('Test Customer');

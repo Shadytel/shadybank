@@ -1,16 +1,25 @@
 version: '3.4'
 
 services:
+  frontend:
+    build:
+      context: .
+      dockerfile: ./Dockerfile.frontend
+    ports:
+      - "8080:8080"
+    depends_on:
+      api-endpoint:
+        condition: service_started
   api-endpoint:
     build:
       context: .
-      dockerfile: ./Dockerfile
+      dockerfile: ./Dockerfile.api
     environment:
       PGHOST: db
       PGUSER: shadybucks
       PGPASSWORD: N9aj8vtIaaYsAY52gdSXjOdgdzY8BTiN
     ports:
-      - "8080:8080"
+      - "8086:8080"
     depends_on:
       db:
         condition: service_healthy

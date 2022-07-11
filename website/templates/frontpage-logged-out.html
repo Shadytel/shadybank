@@ -1,17 +1,16 @@
-{% extends "site.html" %}
+
 {% block title %}Shady Bank{% endblock title %}
 {% block headline %}Shady Bank &mdash; Please Authenticate{% endblock headline %}
 
 {% block body %}
-<form action="/login" method=post>
+<form method=post>
+  <input type="hidden" name="CSRF_TOKEN" value="{{ CSRF_TOKEN }}">
   <h3>Who are you?</h3>
   <p><em>Option 1</em> &bull;  <input type="text" name="pan">
     Type your card number here</p>
-  <p><em>Option 2</em> &bull; <input type="text" name="magstripe">
-    Swipe your card in a magstripe reader</p>
 
   <h3>Prove it!</h3>
-  <p>Secret code <input type="text" name="code">
+  <p>Secret code <input type="text" name="otp">
     <input type=submit value="Sign in">
     </p>
 </form>

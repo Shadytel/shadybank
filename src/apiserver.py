@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 from aiohttp import web
-import aiohttp_jinja2
 import aioredis
 import argparse
 import asyncio
@@ -60,8 +59,6 @@ class ShadyBucksAPIDaemon:
         self._app.add_routes([web.post('/api/void', self.post_void)])
         self._app.add_routes([web.post('/api/reverse', self.post_reverse)])
         self._app.add_routes([web.post('/api/credit', self.post_credit)])
-
-        self._app.add_routes([web.static('/static', os.path.join(os.getcwd() ,'website/static'))])
 
     async def _init_db_pool(self):
         self._psql_pool = await asyncpg.create_pool(database='shadybucks')
