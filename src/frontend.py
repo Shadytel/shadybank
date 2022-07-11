@@ -56,7 +56,7 @@ class ShadyBucksFrontEndDaemon:
             raise web.HTTPBadRequest()
 
     async def get_login(self, request, failed = False):
-        context = { 'CSRF_TOKEN': request['CSRF_TOKEN'] }
+        context = { 'CSRF_TOKEN': request['CSRF_TOKEN'], 'failed': failed }    
         return aiohttp_jinja2.render_template('frontpage-logged-out.html', request, context)
 
     async def post_login(self, request):

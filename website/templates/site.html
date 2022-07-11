@@ -1,20 +1,33 @@
 <!DOCTYPE html>
-<html lang="en">
-  <head>
-    <title>{% block title %}{% endblock %}</title>
-    <link rel="stylesheet" type="text/css" href="/static/style.css"/>
-    {% block metatags %}{% endblock %}
-  </head>
-  <body>
-    <p class="userinfo">
-      {% if session["username"] is defined %} you are <a href="/u:{{session['username']}}">{{session['username']}}</a><br/>
-      (<a href="/logout">i am not</a>){% endif %}
-      <h1>{% block headline %}{% endblock %}</h1>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>{% block title %}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css" type="text/css" media="screen" />
+  {% block metatags %}{% endblock %}
+  <style>
+    ol {
+        font-family: "Bell Gothic";
+        font-weight: bold;
+    }
+    p {
+        font-weight: normal;
+    }
+  </style>
+</head>
+<body>
+  <h1 style="height: 0.4in"><img src="//shady.tel/images/shadytel_logo.svg" class="logo" /> shadytel</h1>
+  <div class="body">
+    <h2 style="clear: left;">{% block headline %}{% endblock %}</h3>
+    
+    {% block body %}{% endblock %}
+    {% block footer %}{% endblock %}
 
-      {% block body %}{% endblock %}
-      {% block footer %}{% endblock %}
-      <hr/>
-    <p align="center">Beerocracy &mdash; Shadytel &mdash; Toorcamp 2022</p>
-  </body>
+    <p>
+      <strong>
+        A JOINT PRODUCTION BETWEEN SHADYTEL AND BEEROCRACY
+      </strong>
+    </p>
+  </div>
+</body>
 </html>
-

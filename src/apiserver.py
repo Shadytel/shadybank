@@ -89,6 +89,12 @@ class ShadyBucksAPIDaemon:
         args = await request.post()
         auth_rows = None
 
+        if ('magstripe' in args and len(args['magstripe'])) or \
+            ('track1' in args and len(args['track1'])) or \
+            ('track2' in args and len(args['track2'])):
+            card_data = self._get_account_from_magstripe(args)
+            args['pan'] = card_data['card']['pan']
+        
         if 'pan' in args:
             auth_rows = await self._psql_pool.fetch('SELECT s.account_id, s.id, s.type, s.secret ' \
                 'FROM cards c, secrets s where c.pan = $1 AND s.account_id = c.account_id', args['pan'])
@@ -174,9 +180,9 @@ class ShadyBucksAPIDaemon:
         if not card_row:
             raise web.HTTPNotFound()
         if card_data['track'] == 1 and card_data['dd1'] == card_row['dd1']:
-            return { 'account': card_row['account_id'], 'card': card_data }
+            return { 'account': card_row['account_id'], 'status': card_row['status'], 'card': card_data }
         elif card_data['track'] == 2 and card_data['dd2'] == card_row['dd2']:
-            return { 'account': card_row['account_id'], 'card': card_data }
+            return { 'account': card_row['account_id'], 'status': card_row['status'], 'card': card_data }
         else:
             raise web.HTTPNotFound()
 
@@ -189,6 +195,8 @@ class ShadyBucksAPIDaemon:
             raise web.HTTPBadRequest()
         merchant_data = await self._get_account_data(await self._get_auth_account(request))
         card_data = await self._get_account_from_magstripe(args)
+        if card_data['status'] != 'activated':
+            raise web.HTTPForbidden()
         cust_data = await self._get_account_data(card_data['account'])
         if amount > cust_data['available']:
             raise web.HTTPForbidden()
@@ -297,6 +305,8 @@ class ShadyBucksAPIDaemon:
         if not (merchant_data['partner'] or merchant_data['admin'] or merchant_data['special']):
             raise web.HTTPForbidden()
         card_data = await self._get_account_from_magstripe(args)
+        if card_data['status'] != 'activated':
+            return web.HTTPBadRequest()
         cust_data = await self._get_account_data(card_data['account'])
         async with self._psql_pool.acquire() as con:
             async with con.transaction():

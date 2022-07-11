@@ -1,2 +1,88 @@
-td { padding: 1em; }
-tr { border-bottom: 1px solid black; }
+@font-face {
+	font-family: "Eurostile T";
+	font-weight: bold;
+	src: url("//shady.tel/fonts/EurostileTBla.eot");
+	src: local("â˜º"),
+		url("//shady.tel/fonts/EurostileTBla.woff") format("woff"),
+		url("//shady.tel/fonts/EurostileTBla.ttf") format("truetype"),
+		url("//shady.tel/fonts/EurostileTBla.svg") format("svg");
+}
+
+@font-face {
+	font-family: "Eurostile T";
+	font-weight: medium;
+	src: url("//shady.tel/fonts/EurostileT.eot");
+	src: local("â˜º"),
+		url("//shady.tel/fonts/EurostileT.woff") format("woff"),
+		url("//shady.tel/fonts/EurostileT.ttf") format("truetype"),
+		url("//shady.tel/fonts/EurostileT.svg") format("svg");
+}
+@font-face {
+  font-family: "Bell Gothic";
+  font-weight: medium;
+  src: url("//shady.tel/fonts/bellgothic.eot");
+  src: local("â˜º"),
+    url("//shady.tel/fonts/bellgothic.woff") format("woff"),
+    url("//shady.tel/fonts/bellgothic.otf") format("opentype"),
+    url("//shady.tel/fonts/bellgothic.svg#filename") format("svg");
+  }
+@font-face {
+  font-family: "Bell Gothic";
+  font-weight: bold;
+  src: url("//shady.tel/fonts/bellgothic-black.eot");
+  src: local("â˜º"),
+    url("//shady.tel/fonts/bellgothic-black.woff") format("woff"),
+    url("//shady.tel/fonts/bellgothic-black.otf") format("opentype"),
+    url("//shady.tel/fonts/bellgothic-black.svg#filename-ital") format("svg");
+  }
+
+
+.product {
+	border-left: 4mm solid #1F6FB0;
+	padding: 4mm;
+	margin: 4mm;
+	margin-bottom: 8mm;
+}
+.product-title {
+	font-family: "Eurostile T";
+	font-weight: bold;
+	font-size: 150%;
+}
+.product-price {
+	font-family: "Eurostile T";
+	font-weight: bold;
+	font-size: 120%;
+}
+.align-cart { float: right; }
+h1 {	height: 0.5in;
+	background: #F5B71B;
+	font-family: "Eurostile T";
+	border-bottom: 0.5em solid #1F6FB0;
+}
+.logo {	margin-left: 0.5em;
+	margin-right: 0.5em;
+	margin-top: -2mm;
+	float: left;
+	height: 1in;
+}
+h2, h3 {
+	font-family: "Eurostile T";
+	font-weight: medium;
+}
+h2 {	font-size: 225%; }
+h3 {	font-size: 150%; }
+body {	background: #ddd;
+	padding: 0;
+	margin: 0;
+}
+div.body {
+	margin: 0;
+	padding: 5mm;
+	padding-top: 0;
+	max-width: 8in;
+}
+p {	font-family: "Bell Gothic"; }
+img.product-image {
+	float: left;
+}
+input {	clear: right; }

@@ -1,17 +1,15 @@
-
-{% block title %}Shady Bank{% endblock title %}
-{% block headline %}Shady Bank &mdash; Please Authenticate{% endblock headline %}
+{% extends "site.html" %}
+{% block title %}Shadybucks: Log In{% endblock title %}
+{% block headline %}Shadybucks: Log In{% endblock headline %}
 
 {% block body %}
-<form method=post>
+{% if failed %}<h4>LOG IN FAILED! Please Try again.</h4>{% endif %}
+<form method="post">
   <input type="hidden" name="CSRF_TOKEN" value="{{ CSRF_TOKEN }}">
-  <h3>Who are you?</h3>
-  <p><em>Option 1</em> &bull;  <input type="text" name="pan">
-    Type your card number here</p>
-
-  <h3>Prove it!</h3>
-  <p>Secret code <input type="text" name="otp">
-    <input type=submit value="Sign in">
-    </p>
+  <table>
+    <tr><td>Card number:</td><td><input name="pan" inputmode="numeric" pattern="[0-9\s]{16-19}" autocomplete="cc-number" maxlength="19" placeholder="8997 9866 722x xxxx"></td></tr>
+    <tr><td>OTP:</td><td><input inputmode="numeric" name="otp" pattern="[0-9\s]{6-7}" maxlength="7" placeholder="xxx xxx"></td></tr>
+    <tr><td colspan="2"><input type="submit" value="Log In"></td></tr>
+  </table>
 </form>
 {% endblock body %}
