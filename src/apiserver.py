@@ -109,8 +109,13 @@ class ShadyBucksAPIDaemon:
                     if argon2.verify(args['password'], auth_row['secret']):
                         return await self.handle_login_success(request, auth_row)
                 if 'otp' in args and auth_row['type'] == 'totp':
+                    # Try Google Authenticator codes first, which ignore the interval we specify
                     otp_obj = pyotp.TOTP(auth_row['secret'], interval=30)
                     if otp_obj.verify(args['otp'], valid_window=2):
+                        return await self.handle_login_success(request, auth_row)
+                    # Try the interval we specified
+                    otp_obj = pyotp.TOTP(auth_row['secret'], interval=60)
+                    if otp_obj.verify(args['otp'], valid_window=1):
                         return await self.handle_login_success(request, auth_row)
         raise web.HTTPUnauthorized()
 
