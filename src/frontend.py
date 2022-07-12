@@ -50,9 +50,7 @@ class ShadyBucksFrontEndDaemon:
         csrf_token = form_data['CSRF_TOKEN']
         # This should be a .getdel but aioredis doesn't support that yet
         expected_sid = await self._redis_pool.get('csrf:{}'.format(csrf_token))
-        if expected_sid == request['SID']:
-            await self._redis_pool.delete('csrf:{}'.format(csrf_token))
-        else:
+        if expected_sid != request['SID']:
             raise web.HTTPBadRequest()
 
     async def get_login(self, request, failed = False):
