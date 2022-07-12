@@ -1,0 +1,24 @@
+{% extends "site.html" %}
+{% block title %}Shadybucks: Transaction Entry{% endblock title %}
+{% block headline %}Shadybucks: Transaction Entry{% endblock headline %}
+
+{% block body %}
+<form method="post">
+  <input type="hidden" name="CSRF_TOKEN" value="{{ CSRF_TOKEN }}">
+  <table>
+    <tr><td>Transaction type:</td>
+        <td>
+            <input type="radio" id="preauth" name="txn_type" value="preauth">
+            <label for="preauth">Pre-authorize</label>
+            <input type="radio" id="purchase" name="txn_type" value="purchase">
+            <label for="purchase">Purchase</label>
+            <input type="radio" id="preauth" name="txn_type" value="credit">
+            <label for="credit">Credit</label>
+        </td>
+    </tr>
+    <tr><td>Amount:</td><td><input inputmode="numeric" name="amount"></td></tr>
+    <tr><td>Magstripe:</td><td><input name="magstripe" autocomplete="off"></td></tr>
+    <tr><td colspan="2"><input type="submit"></td></tr>
+  </table>
+</form>
+{% endblock body %}

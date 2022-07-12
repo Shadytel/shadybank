@@ -22,6 +22,8 @@ class ShadyBucksFrontEndDaemon:
         self._app.add_routes([web.post('/app/capture', self.post_capture)])
         self._app.add_routes([web.post('/app/void', self.post_void)])
         self._app.add_routes([web.post('/app/reverse', self.post_reverse)])
+        self._app.add_routes([web.get('/app/transact', self.get_transact)])
+        self._app.add_routes([web.post('/app/transact', self.post_transact)])
 
         self._app.add_routes([web.static('/static', os.path.join(os.getcwd() ,'website/static'))])
 
@@ -132,6 +134,45 @@ class ShadyBucksFrontEndDaemon:
             message = 'Success!'
         else:
             message = 'Backend said ' + str(resp.status)
+        context = { 'message': message }
+        return aiohttp_jinja2.render_template('status-message.html', request, context)
+
+    async def get_transact(self, request):
+        context = { 'CSRF_TOKEN': request['CSRF_TOKEN'] }    
+        return aiohttp_jinja2.render_template('transaction-entry.html', request, context)
+
+    async def post_transact(self, request):
+        data = await request.post()
+        await self.check_csrf_token(request, data)
+        auth_token = await self._redis_pool.get('sid:{}'.format(request['SID']));
+        auth_header = { 'Authorization': 'Bearer ' + auth_token }
+        message = 'Failed'
+        if 'txn_type' in data:
+            if data['txn_type'] == 'preauth' or data['txn_type'] == 'purchase':
+                auth_resp = await self._api_client_session.post('http://api-endpoint:8080/api/authorize',
+                    data=data, headers=auth_header)
+                if auth_resp.status == 200:
+                    auth_code = await auth_resp.text()
+                    if data['txn_type'] == 'purchase':
+                        cap_resp = await self._api_client_session.post('http://api-endpoint:8080/api/capture',
+                            data={'amount': data['amount'], 'auth_code': auth_code}, headers=auth_header)
+                        if cap_resp.status == 204:
+                            message = 'Success!'
+                        else:
+                            message = 'Backend said ' + str(cap_resp.status)
+                    else:
+                        message = 'Success!'
+                else:
+                    message = 'Backend said ' + str(auth_resp.status)
+            elif data['txn_type'] == 'credit':
+                credit_resp = await self._api_client_session.post('http://api-endpoint:8080/api/credit',
+                    data=data, headers=auth_header)
+                if credit_resp.status == 204:
+                    message = 'Success!'
+                else:
+                    message = 'Backend said ' + str(credit_resp.status)
+            else:
+                message = 'Stop hacking us'
         context = { 'message': message }
         return aiohttp_jinja2.render_template('status-message.html', request, context)
 

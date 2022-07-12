@@ -232,7 +232,7 @@ class ShadyBucksAPIDaemon:
                     'VALUES($1, $2, $3, $4, $5)', card_data['card']['pan'], auth_code, cust_data['id'], merchant_data['id'], amount);
                 await con.execute('UPDATE accounts SET available = available - $1, last_updated = NOW() WHERE id = $2',
                     amount, cust_data['id'])  
-        return web.Response(status=204)
+        return web.Response(text=auth_code)
 
     async def post_capture(self, request):
         args = await request.post()
