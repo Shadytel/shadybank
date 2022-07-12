@@ -19,6 +19,7 @@ class ShadyBucksFrontEndDaemon:
         self._app.add_routes([web.get('/app/account', self.get_account)])
         self._app.add_routes([web.get('/app/login', self.get_login)])
         self._app.add_routes([web.post('/app/login', self.post_login)])
+        self._app.add_routes([web.post('/app/logout', self.post_logout)])
         self._app.add_routes([web.post('/app/capture', self.post_capture)])
         self._app.add_routes([web.post('/app/void', self.post_void)])
         self._app.add_routes([web.post('/app/reverse', self.post_reverse)])
@@ -74,6 +75,15 @@ class ShadyBucksFrontEndDaemon:
             raise web.HTTPFound('/app/account')
         else:
             return await self.get_login(request, True)
+
+    async def post_logout(self, request):
+        data = await request.post()
+        await self.check_csrf_token(request, data)
+        auth_token = await self._redis_pool.get('sid:{}'.format(request['SID']));
+        auth_header = { 'Authorization': 'Bearer ' + auth_token }
+        logout_resp = await self._api_client_session.post('http://api-endpoint:8080/api/logout', headers=auth_header)
+        await self._redis_pool.setex('sid:{}'.format(request['SID']), 2592000, '')
+        return await self.get_login(request, False)
 
     async def get_account(self, request):
         context = { 'CSRF_TOKEN': request['CSRF_TOKEN'] }

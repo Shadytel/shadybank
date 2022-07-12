@@ -11,7 +11,11 @@
 
 <br />
 Perhaps you would like to do some <a href="transact">transacting?</a><br />
-Need to log out? Clear your cookies.
+<form action="/app/logout" method="post">
+  <input type="hidden" name="CSRF_TOKEN" value="{{ CSRF_TOKEN }}">
+  Need to log out? Clear your cookies or press this convenient button:
+  <input type="submit" value="Log out">
+</form>
 
 {% if authorizations %}
 <h3>Pending Transactions</h3>
