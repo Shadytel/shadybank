@@ -1,27 +1,79 @@
 {% extends "site.html" %}
-{% block title %}Shady Bank: account history{% endblock title %}
-{% block headline %}Shady Bank &mdash; Account History{% endblock headline %}
+{% block title %}Shadybucks: Account Overview{% endblock title %}
+{% block headline %}Shadybucks: Account Overview{% endblock headline %}
 
 {% block body %}
+<h3>Balances</h3>
 <table>
+  <tr><td>Total Balance</td><td>{{balance}}</td></tr>
+  <tr><td>Available Balance</td><td>{{available}}</td></tr>
+</table>
+
+{% if authorizations %}
+<h3>Pending Transactions</h3>
+<table border="1">
   <tr>
-    <th></th>
-    <th>balance</th>
+    <th>Timestamp</th>
+    <th>Description</th>
+    <th>Type</th>
+    <th>Amount</th>
+    <th>Expires</th>
   </tr>
-  {% for t in data.transactions %}
+  {% for t in authorizations %}
   <tr>
+    <td>{{t["timestamp"]}}</td>
     <td>
-      {{t["timestamp_human"]}} /
-      <!-- counterparty: {{t["counterparty"]}} / -->
-      {% if t["amount"] > 0 %} credit +⋎{{t["amount"]}}
-      {% else %} debit -⋎{{t["amount"]}}
-      {% endif %}
-      <br/>
-      <em>{{t["note"]}}</em>
+      {{t["counterparty"]}}
+      <br />
+      <em>{{t["description"]}}</em>
     </td>
-    <td>⋎{{t["balance"]}}</td>
+    <td>{{t["type"]}}</td>
+    <td>{{t["authorized_debit_amount"]}}</td>
+    <td>{{t["expires"]}}</td>
+    {% if t["type"] == 'credit' %}
+    <td>
+      <form action="/app/capture" method="post">
+        <input type="hidden" name="CSRF_TOKEN" value="{{ CSRF_TOKEN }}">
+        <input type="hidden" name="auth_code" value="{{ t["auth_code"] }}">
+        Final amount: <br />
+        <input type="numeric" name="amount" length="6">
+        <input type="submit" value="Capture">
+      </form>
+      <form action="/app/void" method="post">
+        <input type="hidden" name="CSRF_TOKEN" value="{{ CSRF_TOKEN }}">
+        <input type="hidden" name="auth_code" value="{{ t["auth_code"] }}">
+        <input type="submit" value="Void">
+      </form>
+    </td>
+    {% endif %}
   </tr>
   {% endfor %}
 </table>
+<i>Please contact the merchant directly to finalize these transactions.</i>
+{% endif %}
+
+{% if transactions %}
+<h3>Posted Transactions</h3>
+<table border="1">
+  <tr>
+    <th>Timestamp</th>
+    <th>Description</th>
+    <th>Type</th>
+    <th>Amount</th>
+  </tr>
+  {% for t in transactions %}
+  <tr>
+    <td>{{t["timestamp"]}}</td>
+    <td>
+      {{t["counterparty"]}}
+      <br />
+      <em>{{t["description"]}}</em>
+    </td>
+    <td>{{t["type"]}} {{t["subtype"]}}</td>
+    <td>{{t["amount"]}}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
 {% endblock body %}
 

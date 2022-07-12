@@ -52,6 +52,7 @@ class ShadyBucksAPIDaemon:
         self._app.add_routes([web.get('/api/check', self.get_check_credentials)])
         self._app.add_routes([web.get('/api/balance', self.get_balance)])
         self._app.add_routes([web.get('/api/transactions', self.get_transactions)])
+        self._app.add_routes([web.get('/api/authorizations', self.get_authorizations)])
 
         # Merchant APIs
         self._app.add_routes([web.post('/api/authorize', self.post_authorize)])
@@ -156,14 +157,33 @@ class ShadyBucksAPIDaemon:
         transactions = []
         for transaction in transaction_rows:
             if transaction['debit_account'] == acct:
-                transactions.append({ 'timestamp': str(transaction['timestamp']), 'amount': float(transaction['amount']), \
+                transactions.append({ 'timestamp': str(transaction['timestamp']), 'amount': float(transaction['amount']),
                     'type': 'debit', 'subtype': transaction['type'], 'counterparty': transaction['cname'], 
-                    'auth_code': transaction['auth_code'], 'description': transaction['description']})
+                    'auth_code': transaction['auth_code'], 'description': transaction['description'] or '' })
             else:
-                transactions.append({ 'timestamp': str(transaction['timestamp']), 'amount': float(transaction['amount']), \
+                transactions.append({ 'timestamp': str(transaction['timestamp']), 'amount': float(transaction['amount']),
                     'type': 'credit', 'subtype': transaction['type'], 'counterparty': transaction['dname'], 
-                    'auth_code': transaction['auth_code'], 'description': transaction['description']})
+                    'auth_code': transaction['auth_code'], 'description': transaction['description'] or ''})
         return web.json_response(transactions)
+
+    async def get_authorizations(self, request):
+        acct = await self._get_auth_account(request)
+        authorization_rows = await self._psql_pool.fetch('SELECT a.*, ca.name as cname, da.name as dname FROM authorizations a, accounts ca, accounts da ' \
+            'WHERE (credit_account = $1 OR debit_account = $1) AND a.status = \'pending\' AND ' \
+            'ca.id = a.credit_account AND da.id = a.debit_account ORDER BY a.timestamp DESC', acct);
+        authorizations = []
+        for authorization in authorization_rows:
+            if authorization['debit_account'] == acct:
+                authorization.append({ 'timestamp': str(authorization['timestamp']), 'expires': str(authorization['expires']),
+                    'authorized_debit_amount': float(authorization['authorized_debit_amount']),
+                    'type': 'debit', 'counterparty': authorization['cname'], 
+                    'auth_code': authorization['auth_code'] })
+            else:
+                authorizations.append({ 'timestamp': str(authorization['timestamp']), 'expires': str(authorization['expires']),
+                    'authorized_debit_amount': float(authorization['authorized_debit_amount']),
+                    'type': 'credit', 'counterparty': authorization['dname'], 
+                    'auth_code': authorization['auth_code'] })
+        return web.json_response(authorizations)
 
     async def _get_account_from_magstripe(self, args):
         card_data = None

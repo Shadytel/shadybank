@@ -16,8 +16,13 @@ class ShadyBucksFrontEndDaemon:
         aiohttp_jinja2.setup(self._app,
             loader=jinja2.FileSystemLoader(os.path.join(os.getcwd() ,'website/templates')))
 
+        self._app.add_routes([web.get('/app/account', self.get_account)])
         self._app.add_routes([web.get('/app/login', self.get_login)])
         self._app.add_routes([web.post('/app/login', self.post_login)])
+        self._app.add_routes([web.post('/app/capture', self.post_capture)])
+        self._app.add_routes([web.post('/app/void', self.post_void)])
+        self._app.add_routes([web.post('/app/reverse', self.post_reverse)])
+
         self._app.add_routes([web.static('/static', os.path.join(os.getcwd() ,'website/static'))])
 
     async def _init_pools(self):
@@ -64,9 +69,71 @@ class ShadyBucksFrontEndDaemon:
         if login_resp.status == 201:
             auth_token = await login_resp.text()
             await self._redis_pool.setex('sid:{}'.format(request['SID']), 2592000, auth_token)
-            raise web.HTTPFound('/')
+            raise web.HTTPFound('/app/account')
         else:
             return await self.get_login(request, True)
+
+    async def get_account(self, request):
+        context = { 'CSRF_TOKEN': request['CSRF_TOKEN'] }
+        auth_token = await self._redis_pool.get('sid:{}'.format(request['SID']));
+        auth_header = { 'Authorization': 'Bearer ' + auth_token }
+        balance_resp = await self._api_client_session.get('http://api-endpoint:8080/api/balance', headers=auth_header)
+        if balance_resp.status == 200:
+            balance_json = await balance_resp.json()
+            context = { **context, **balance_json }
+        else:
+            raise web.HTTPFound('/app/login')
+        txns_resp = await self._api_client_session.get('http://api-endpoint:8080/api/transactions', headers=auth_header)
+        if txns_resp.status == 200:
+            txns_json = await txns_resp.json()
+            context['transactions'] = txns_json
+        auths_resp = await self._api_client_session.get('http://api-endpoint:8080/api/authorizations', headers=auth_header)
+        if auths_resp.status == 200:
+            auths_json = await auths_resp.json()
+            context['authorizations'] = auths_json
+        return aiohttp_jinja2.render_template('transaction-history.html', request, context)
+        
+    async def post_capture(self, request):
+        data = await request.post()
+        await self.check_csrf_token(request, data)
+        auth_token = await self._redis_pool.get('sid:{}'.format(request['SID']));
+        auth_header = { 'Authorization': 'Bearer ' + auth_token }
+        resp = await self._api_client_session.post('http://api-endpoint:8080/api/capture',
+            data=data, headers=auth_header)
+        if resp.status == 204:
+            message = 'Success!'
+        else:
+            message = 'Backend said ' + str(resp.status)
+        context = { 'message': message }
+        return aiohttp_jinja2.render_template('status-message.html', request, context)
+
+    async def post_void(self, request):
+        data = await request.post()
+        await self.check_csrf_token(request, data)
+        auth_token = await self._redis_pool.get('sid:{}'.format(request['SID']));
+        auth_header = { 'Authorization': 'Bearer ' + auth_token }
+        resp = await self._api_client_session.post('http://api-endpoint:8080/api/void',
+            data=data, headers=auth_header)
+        if resp.status == 204:
+            message = 'Success!'
+        else:
+            message = 'Backend said ' + str(resp.status)
+        context = { 'message': message }
+        return aiohttp_jinja2.render_template('status-message.html', request, context)
+
+    async def post_reverse(self, request):
+        data = await request.post()
+        await self.check_csrf_token(request, data)
+        auth_token = await self._redis_pool.get('sid:{}'.format(request['SID']));
+        auth_header = { 'Authorization': 'Bearer ' + auth_token }
+        resp = await self._api_client_session.post('http://api-endpoint:8080/api/reverse',
+            data=data, headers=auth_header)
+        if resp.status == 204:
+            message = 'Success!'
+        else:
+            message = 'Backend said ' + str(resp.status)
+        context = { 'message': message }
+        return aiohttp_jinja2.render_template('status-message.html', request, context)
 
 def main():
     arg_parser = argparse.ArgumentParser(description='ShadyBucks frontend server')
