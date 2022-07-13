@@ -172,6 +172,12 @@ class ShadyBucksFrontEndDaemon:
 
     async def get_transact(self, request):
         context = { 'CSRF_TOKEN': request['CSRF_TOKEN'] }    
+        balance_resp = await self._api_client_session.get('http://api-endpoint:8080/api/balance', headers=auth_header)
+        if balance_resp.status == 200:
+            balance_json = await balance_resp.json()
+            context = { **context, **balance_json }
+        else:
+            raise web.HTTPFound('/app/login')
         return aiohttp_jinja2.render_template('transaction-entry.html', request, context)
 
     async def post_transact(self, request):
