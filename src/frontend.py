@@ -19,6 +19,8 @@ class ShadyBucksFrontEndDaemon:
         self._app.add_routes([web.get('/app/account', self.get_account)])
         self._app.add_routes([web.get('/app/login', self.get_login)])
         self._app.add_routes([web.post('/app/login', self.post_login)])
+        self._app.add_routes([web.get('/app/partner-login', self.get_partner_login)])
+        self._app.add_routes([web.post('/app/partner-login', self.post_partner_login)])
         self._app.add_routes([web.post('/app/logout', self.post_logout)])
         self._app.add_routes([web.post('/app/capture', self.post_capture)])
         self._app.add_routes([web.post('/app/void', self.post_void)])
@@ -66,6 +68,21 @@ class ShadyBucksFrontEndDaemon:
         return aiohttp_jinja2.render_template('frontpage-logged-out.html', request, context)
 
     async def post_login(self, request):
+        data = await request.post()
+        await self.check_csrf_token(request, data)
+        login_resp = await self._api_client_session.post('http://api-endpoint:8080/api/login', data=data)
+        if login_resp.status == 201:
+            auth_token = await login_resp.text()
+            await self._redis_pool.setex('sid:{}'.format(request['SID']), 2592000, auth_token)
+            raise web.HTTPFound('/app/account')
+        else:
+            return await self.get_login(request, True)
+
+    async def get_partner_login(self, request, failed = False):
+        context = { 'CSRF_TOKEN': request['CSRF_TOKEN'], 'failed': failed }    
+        return aiohttp_jinja2.render_template('partner-login.html', request, context)
+
+    async def post_partner_login(self, request):
         data = await request.post()
         await self.check_csrf_token(request, data)
         login_resp = await self._api_client_session.post('http://api-endpoint:8080/api/login', data=data)

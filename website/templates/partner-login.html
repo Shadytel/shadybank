@@ -1,0 +1,15 @@
+{% extends "site.html" %}
+{% block title %}Shadybucks: Log In{% endblock title %}
+{% block headline %}Shadybucks: Log In{% endblock headline %}
+
+{% block body %}
+{% if failed %}<h4>LOG IN FAILED! Please Try again.</h4>{% endif %}
+<form method="post">
+  <input type="hidden" name="CSRF_TOKEN" value="{{ CSRF_TOKEN }}">
+  <table>
+    <tr><td>Account number:</td><td><input name="account_id" inputmode="numeric"></td></tr>
+    <tr><td>OTP:</td><td><input inputmode="numeric" name="otp" pattern="[0-9\s]{6-7}" maxlength="7" placeholder="xxx xxx"></td></tr>
+    <tr><td colspan="2"><input type="submit" value="Log In"></td></tr>
+  </table>
+</form>
+{% endblock body %}
