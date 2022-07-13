@@ -430,7 +430,7 @@ class ShadyBucksAPIDaemon:
         dd1 = base64.b32encode(secrets.token_bytes(5))
         dd2 = secrets.randbelow(100000000)
         await self._psql_pool.execute('UPDATE accounts SET name = $2 WHERE id = $1',
-            card_data['account_id'], name)
+            card_data['account'], name)
         await self._psql_pool.execute('UPDATE cards SET name = $2, dd1 = dd1 + $3, dd2 = dd2 + $4, status = \'activated\' WHERE pan = $1',
             card_data['card']['pan'], name, dd1, dd2)
         return web.json_response({
