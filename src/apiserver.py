@@ -435,7 +435,7 @@ class ShadyBucksAPIDaemon:
             card_data['card']['pan'], name, str(dd1), dd2)
         return web.json_response({
             'track1': 'B' + str(card_data['card']['pan']) + '^' + name + '^' + \
-            str(card_data['card']['exp']) + '101' + card_data['card']['dd1'] + dd1,
+            str(card_data['card']['exp']) + '101' + str(card_data['card']['dd1']) + dd1,
             'track2': str(card_data['card']['pan']) + '=' + str(card_data['card']['exp']) + \
             '101' + dd2 })
 
