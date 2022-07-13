@@ -14,7 +14,7 @@ import re
 import secrets
 import time
 
-track1_re = re.compile(r'(?a)%B(?P<pan>\d{8,19})\^(?P<name>[\w/]*)\^(?P<exp>\d{4})(?P<svc>\d{3})(?P<dd1>.*?)\?')
+track1_re = re.compile(r'(?a)%B(?P<pan>\d{8,19})\^(?P<name>.*)\^(?P<exp>\d{4})(?P<svc>\d{3})(?P<dd1>.*?)\?')
 track2_re = re.compile(r'(?a);(?P<pan>\d{8,19})=(?P<exp>\d{4})(?P<svc>\d{3})(?P<dd2>.*?)\?')
 
 def parse_track1(track):
