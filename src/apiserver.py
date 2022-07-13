@@ -437,7 +437,7 @@ class ShadyBucksAPIDaemon:
             'track1': 'B' + str(card_data['card']['pan']) + '^' + name + '^' + \
             str(card_data['card']['exp']) + '101' + str(card_data['card']['dd1']) + dd1,
             'track2': str(card_data['card']['pan']) + '=' + str(card_data['card']['exp']) + \
-            '101' + dd2 })
+            '101' + str(dd2) })
 
 def main():
     arg_parser = argparse.ArgumentParser(description='ShadyBucks API server')
