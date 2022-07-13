@@ -226,7 +226,7 @@ class ShadyBucksFrontEndDaemon:
         await self.check_csrf_token(request, data)
         auth_token = await self._redis_pool.get('sid:{}'.format(request['SID']));
         auth_header = { 'Authorization': 'Bearer ' + auth_token }
-        act_resp = await self._api_client_session.post('http://api-endpoint:8080/api/authorize',
+        act_resp = await self._api_client_session.post('http://api-endpoint:8080/api/activate',
             data=data, headers=auth_header)
         if act_resp.status != 200:
             return aiohttp_jinja2.render_template('status-message.html', request,
