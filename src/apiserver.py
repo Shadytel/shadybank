@@ -79,13 +79,13 @@ class ShadyBucksAPIDaemon:
     def _get_request_auth_token(self, request):
         if not 'Authorization' in request.headers:
             raise web.HTTPUnauthorized()
-        
+
         tokens = request.headers['Authorization'].split(' ')
         if len(tokens) != 2 or tokens[0].lower() != 'bearer':
             raise web.HTTPUnauthorized()
-        
+
         return tokens[1]
-        
+
     async def post_login(self, request):
         args = await request.post()
         auth_rows = None
@@ -95,7 +95,7 @@ class ShadyBucksAPIDaemon:
             ('track2' in args and len(args['track2'])):
             card_data = self._get_account_from_magstripe(args)
             args['pan'] = card_data['card']['pan']
-        
+
         if 'pan' in args:
             auth_rows = await self._psql_pool.fetch('SELECT s.account_id, s.id, s.type, s.secret ' \
                 'FROM cards c, secrets s where c.pan = $1 AND s.account_id = c.account_id', args['pan'])
@@ -110,7 +110,7 @@ class ShadyBucksAPIDaemon:
                     if argon2.verify(args['password'], auth_row['secret']):
                         return await self.handle_login_success(request, auth_row)
                 if 'pin' in args and len(args['pin']) and auth_row['type'] == 'password':
-                if 'otp' in args and len(args['otp]) and auth_row['type'] == 'totp':
+                if 'otp' in args and len(args['otp']) and auth_row['type'] == 'totp':
                     # Try Google Authenticator codes first, which ignore the interval we specify
                     otp_obj = pyotp.TOTP(auth_row['secret'], interval=30)
                     if otp_obj.verify(args['otp'], valid_window=2):
@@ -197,10 +197,10 @@ class ShadyBucksAPIDaemon:
             card_data = parse_track1(args['track1'])
         elif 'track2' in args:
             card_data = parse_track2(args['track2'])
-        
+
         if not card_data:
             raise web.HTTPBadRequest()
-        
+
         card_row = await self._psql_pool.fetchrow('SELECT * FROM cards WHERE pan = $1 AND expires = $2',
             card_data['pan'], card_data['exp'])
         if not card_row:
@@ -263,7 +263,7 @@ class ShadyBucksAPIDaemon:
                 await con.execute('INSERT INTO authorizations (pan, auth_code, debit_account, credit_account, authorized_debit_amount) ' \
                     'VALUES($1, $2, $3, $4, $5)', card_data['card']['pan'], auth_code, cust_data['id'], merchant_data['id'], amount);
                 await con.execute('UPDATE accounts SET available = available - $1, last_updated = NOW() WHERE id = $2',
-                    amount, cust_data['id'])  
+                    amount, cust_data['id'])
         return web.Response(text=auth_code)
 
     async def post_capture(self, request):
@@ -296,7 +296,7 @@ class ShadyBucksAPIDaemon:
                     description = None
                 await con.execute('INSERT INTO transactions (debit_account, credit_account, amount, pan, auth_code, ' \
                     'type, description) VALUES($1, $2, $3, $4, $5, $6, $7)', auth_row['debit_account'],
-                    auth_row['credit_account'], amount, auth_row['pan'], args['auth_code'], "purchase", description)  
+                    auth_row['credit_account'], amount, auth_row['pan'], args['auth_code'], "purchase", description)
         return web.Response(status=204)
 
     async def post_void(self, request):
@@ -313,7 +313,7 @@ class ShadyBucksAPIDaemon:
                     raise web.HTTPNotFound()
                 await con.execute('UPDATE authorizations set status = \'voided\' WHERE id = $1', auth_row['id']);
                 await con.execute('UPDATE accounts SET available = available + $1, last_updated = NOW() WHERE id = $2',
-                    auth_row['authorized_debit_amount'], auth_row['debit_account']) 
+                    auth_row['authorized_debit_amount'], auth_row['debit_account'])
         return web.Response(status=204)
 
     async def post_reverse(self, request):
@@ -337,7 +337,7 @@ class ShadyBucksAPIDaemon:
                     merchant_data['id'], args['auth_code']);
                 await con.execute('UPDATE accounts SET balance = balance + $1, ' \
                     'available = available + $1, last_updated = NOW() WHERE id = $2',
-                    transaction_row['amount'], transaction_row['debit_account']) 
+                    transaction_row['amount'], transaction_row['debit_account'])
                 await con.execute('UPDATE accounts SET balance = balance - $1, ' \
                     'available = available - $1, last_updated = NOW() WHERE id = $2',
                     transaction_row['amount'], transaction_row['credit_account'])
@@ -361,7 +361,7 @@ class ShadyBucksAPIDaemon:
         merchant_data = await self._get_account_data(await self._get_auth_account(request))
         if not (merchant_data['partner'] or merchant_data['admin'] or merchant_data['special']):
             raise web.HTTPForbidden()
-        
+
         card_data = {}
 
         if ('magstripe' in args and len(args['magstripe'])) or \
@@ -410,7 +410,7 @@ class ShadyBucksAPIDaemon:
                     description = None
                 await con.execute('INSERT INTO transactions (debit_account, credit_account, amount, pan, ' \
                     'type, description) VALUES($1, $2, $3, $4, $5, $6)', merchant_data['id'],
-                    cust_data['id'], amount, card_data['card']['pan'], "credit_points", description)  
+                    cust_data['id'], amount, card_data['card']['pan'], "credit_points", description)
         return web.Response(status=204)
 
 def main():
