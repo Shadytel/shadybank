@@ -27,6 +27,8 @@ class ShadyBucksFrontEndDaemon:
         self._app.add_routes([web.post('/app/reverse', self.post_reverse)])
         self._app.add_routes([web.get('/app/transact', self.get_transact)])
         self._app.add_routes([web.post('/app/transact', self.post_transact)])
+        self._app.add_routes([web.get('/app/activate', self.get_activate)])
+        self._app.add_routes([web.post('/app/activate', self.post_activate)])
 
         self._app.add_routes([web.static('/static', os.path.join(os.getcwd() ,'website/static'))])
 
@@ -206,6 +208,22 @@ class ShadyBucksFrontEndDaemon:
                 message = 'Stop hacking us'
         context = { 'message': message }
         return aiohttp_jinja2.render_template('status-message.html', request, context)
+
+    async def get_activate(self, request):
+        context = { 'CSRF_TOKEN': request['CSRF_TOKEN'] }    
+        return aiohttp_jinja2.render_template('activate-entry.html', request, context)
+
+    async def post_activate(self, request):
+        data = await request.post()
+        await self.check_csrf_token(request, data)
+        auth_token = await self._redis_pool.get('sid:{}'.format(request['SID']));
+        auth_header = { 'Authorization': 'Bearer ' + auth_token }
+        act_resp = await self._api_client_session.post('http://api-endpoint:8080/api/authorize',
+            data=data, headers=auth_header)
+        if act_resp.status != 200:
+            return aiohttp_jinja2.render_template('status-message.html', request,
+                { 'message': 'Backend said ' + str(act_resp.status) })    
+        return aiohttp_jinja2.render_template('activate-entry.html', request, await act_resp.json())
 
 def main():
     arg_parser = argparse.ArgumentParser(description='ShadyBucks frontend server')

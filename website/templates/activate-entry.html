@@ -1,0 +1,14 @@
+{% extends "site.html" %}
+{% block title %}Shadybucks: Activation{% endblock title %}
+{% block headline %}Shadybucks: Activation{% endblock headline %}
+
+{% block body %}
+<form method="post">
+    <input type="hidden" name="CSRF_TOKEN" value="{{ CSRF_TOKEN }}">
+    <table>
+      <tr><td>Name:</td><td><input name="name" autocomplete="off"></td></tr>
+      <tr><td>Magstripe:</td><td><input name="magstripe" autocomplete="off"></td></tr>
+      <tr><td colspan="2"><input type="submit" value="Activate"></td></tr>
+    </table>
+  </form>
+{% endblock body %}

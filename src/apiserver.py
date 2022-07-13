@@ -61,6 +61,9 @@ class ShadyBucksAPIDaemon:
         self._app.add_routes([web.post('/api/reverse', self.post_reverse)])
         self._app.add_routes([web.post('/api/credit', self.post_credit)])
 
+        # Admin APIs
+        self._app.add_routes([web.post('/api/activate', self.post_activate)])
+
     async def _init_db_pool(self):
         self._psql_pool = await asyncpg.create_pool(database='shadybucks')
         self._redis_pool = aioredis.from_url("redis://redis", decode_responses=True)
@@ -414,6 +417,27 @@ class ShadyBucksAPIDaemon:
                     'type, description) VALUES($1, $2, $3, $4, $5, $6)', merchant_data['id'],
                     cust_data['id'], amount, card_data['card']['pan'], "credit_points", description)
         return web.Response(status=204)
+
+    async def post_activate(self, request):
+        args = await request.post()
+        if not 'name' in args:
+            raise web.HTTPBadRequest()
+        args['name'] = args['name'].upper()
+        merchant_data = await self._get_account_data(await self._get_auth_account(request))
+        if not merchant_data['admin']:
+            raise web.HTTPForbidden()
+        card_data = await self._get_account_from_magstripe(args)
+        dd1 = base64.b32encode(secrets.token_bytes(5))
+        dd2 = secrets.randbelow(100000000)
+        await self._psql_pool.execute('UPDATE accounts SET name = $2 WHERE id = $1',
+            card_data['account_id'], args['name'])
+        await self._psql_pool.execute('UPDATE cards SET name = $2, dd1 = dd1 + $3, dd2 = dd2 + $4, status = \'activated\' WHERE pan = $1',
+            card_data['card']['pan'], args['name'], dd1, dd2)
+        return web.json_response({
+            'track1': 'B' + str(card_data['card']['pan']) + '^' + args[name] + '^' + \
+            str(card_data['card']['exp']) + '101' + card_data['card']['dd1'] + dd1,
+            'track2': str(card_data['card']['pan']) + '=' + str(card_data['card']['exp']) + \
+            '101' + dd2 })
 
 def main():
     arg_parser = argparse.ArgumentParser(description='ShadyBucks API server')
