@@ -231,7 +231,7 @@ class ShadyBucksFrontEndDaemon:
         if act_resp.status != 200:
             return aiohttp_jinja2.render_template('status-message.html', request,
                 { 'message': 'Backend said ' + str(act_resp.status) })    
-        return aiohttp_jinja2.render_template('activate-entry.html', request, await act_resp.json())
+        return aiohttp_jinja2.render_template('activate-result.html', request, await act_resp.json())
 
 def main():
     arg_parser = argparse.ArgumentParser(description='ShadyBucks frontend server')
