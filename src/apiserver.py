@@ -423,6 +423,9 @@ class ShadyBucksAPIDaemon:
         if not 'name' in args:
             raise web.HTTPBadRequest()
         name = str(args['name'].upper())
+        name_parts = name.split(' ')
+        if len(name_parts) > 1:
+            name = name_parts[-1] + '/' + name_parts[:-1]
         merchant_data = await self._get_account_data(await self._get_auth_account(request))
         if not merchant_data['admin']:
             raise web.HTTPForbidden()
