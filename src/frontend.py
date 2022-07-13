@@ -172,6 +172,8 @@ class ShadyBucksFrontEndDaemon:
 
     async def get_transact(self, request):
         context = { 'CSRF_TOKEN': request['CSRF_TOKEN'] }    
+        auth_token = await self._redis_pool.get('sid:{}'.format(request['SID']));
+        auth_header = { 'Authorization': 'Bearer ' + auth_token }
         balance_resp = await self._api_client_session.get('http://api-endpoint:8080/api/balance', headers=auth_header)
         if balance_resp.status == 200:
             balance_json = await balance_resp.json()
