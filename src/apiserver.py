@@ -422,7 +422,7 @@ class ShadyBucksAPIDaemon:
         args = await request.post()
         if not 'name' in args:
             raise web.HTTPBadRequest()
-        args['name'] = args['name'].upper()
+        name = args['name'].upper()
         merchant_data = await self._get_account_data(await self._get_auth_account(request))
         if not merchant_data['admin']:
             raise web.HTTPForbidden()
@@ -430,11 +430,11 @@ class ShadyBucksAPIDaemon:
         dd1 = base64.b32encode(secrets.token_bytes(5))
         dd2 = secrets.randbelow(100000000)
         await self._psql_pool.execute('UPDATE accounts SET name = $2 WHERE id = $1',
-            card_data['account_id'], args['name'])
+            card_data['account_id'], name])
         await self._psql_pool.execute('UPDATE cards SET name = $2, dd1 = dd1 + $3, dd2 = dd2 + $4, status = \'activated\' WHERE pan = $1',
-            card_data['card']['pan'], args['name'], dd1, dd2)
+            card_data['card']['pan'], name, dd1, dd2)
         return web.json_response({
-            'track1': 'B' + str(card_data['card']['pan']) + '^' + args[name] + '^' + \
+            'track1': 'B' + str(card_data['card']['pan']) + '^' + name + '^' + \
             str(card_data['card']['exp']) + '101' + card_data['card']['dd1'] + dd1,
             'track2': str(card_data['card']['pan']) + '=' + str(card_data['card']['exp']) + \
             '101' + dd2 })
