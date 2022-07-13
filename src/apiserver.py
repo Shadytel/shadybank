@@ -427,7 +427,7 @@ class ShadyBucksAPIDaemon:
         if not merchant_data['admin']:
             raise web.HTTPForbidden()
         card_data = await self._get_account_from_magstripe(args)
-        dd1 = base64.b32encode(secrets.token_bytes(5))
+        dd1 = base64.b32encode(secrets.token_bytes(5)).decode('utf-8')
         dd2 = secrets.randbelow(100000000)
         await self._psql_pool.execute('UPDATE accounts SET name = $2 WHERE id = $1',
             card_data['account'], name)
@@ -435,7 +435,7 @@ class ShadyBucksAPIDaemon:
             card_data['card']['pan'], name, str(dd1), dd2)
         return web.json_response({
             'track1': 'B' + str(card_data['card']['pan']) + '^' + name + '^' + \
-            str(card_data['card']['exp']) + '101' + str(card_data['card']['dd1']) + dd1,
+            str(card_data['card']['exp']) + '101' + card_data['card']['dd1'] + dd1,
             'track2': str(card_data['card']['pan']) + '=' + str(card_data['card']['exp']) + \
             '101' + dd2 })
 
