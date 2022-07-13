@@ -431,8 +431,8 @@ class ShadyBucksAPIDaemon:
         dd2 = secrets.randbelow(100000000)
         await self._psql_pool.execute('UPDATE accounts SET name = $2 WHERE id = $1',
             card_data['account'], name)
-        await self._psql_pool.execute('UPDATE cards SET name = $2, dd1 = dd1 + $3, dd2 = dd2 + $4, status = \'activated\' WHERE pan = $1',
-            card_data['card']['pan'], name, dd1, dd2)
+        await self._psql_pool.execute('UPDATE cards SET name = $2, dd1 = dd1 || $3, dd2 = dd2 || $4, status = \'activated\' WHERE pan = $1',
+            card_data['card']['pan'], name, str(dd1), str(dd2))
         return web.json_response({
             'track1': 'B' + str(card_data['card']['pan']) + '^' + name + '^' + \
             str(card_data['card']['exp']) + '101' + card_data['card']['dd1'] + dd1,
