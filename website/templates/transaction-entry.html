@@ -17,6 +17,10 @@
         </td>
     </tr>
     <tr><td>Amount:</td><td><input inputmode="numeric" name="amount"></td></tr>
+    <tr><td colspan="2">Manual Entry / Card Not Present</td></tr>
+    <tr><td>Primary Account Number:</td><td><input name="pan" inputmode="numeric" pattern="[0-9\s]{16-19}" autocomplete="cc-number" maxlength="19" placeholder="8997 9866 722x xxxx"></td></tr>
+    <tr><td>OTP:</td><td><input inputmode="numeric" name="otp" pattern="[0-9\s]{6-7}" maxlength="7" placeholder="xxx xxx"></td></tr>
+    <tr><td colspan="2">Card Present</td></tr>
     <tr><td>Magstripe:</td><td><input name="magstripe" autocomplete="off"></td></tr>
     <tr><td colspan="2"><input type="submit"></td></tr>
   </table>

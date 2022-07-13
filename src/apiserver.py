@@ -219,7 +219,38 @@ class ShadyBucksAPIDaemon:
         if amount <= 0:
             raise web.HTTPBadRequest()
         merchant_data = await self._get_account_data(await self._get_auth_account(request))
-        card_data = await self._get_account_from_magstripe(args)
+
+        card_data = {}
+
+        if ('magstripe' in args and len(args['magstripe'])) or \
+            ('track1' in args and len(args['track1'])) or \
+            ('track2' in args and len(args['track2'])):
+            card_data = self._get_account_from_magstripe(args)
+        elif ('pan' in args and len(args['pan'])) and \
+            ('otp' in args and len(args['otp'])):
+            card_row = await self._psql_pool.fetchrow('SELECT * FROM cards WHERE pan = $1', args['pan'])
+            if not card_row:
+                raise web.HTTPNotFound()
+            card_data = { 'account': card_row['account_id'], 'status': card_row['status'], 'card': { 'pan': args['pan'] } }
+            auth_rows = await self._psql_pool.fetch('SELECT s.account_id, s.id, s.type, s.secret ' \
+                'FROM secrets s where s.account_id = $1 and s.type =\'totp\'', card_row['account_id'])
+            auth_match = False
+            for auth_row in auth_rows:
+                # Try Google Authenticator codes first, which ignore the interval we specify
+                otp_obj = pyotp.TOTP(auth_row['secret'], interval=30)
+                if otp_obj.verify(args['otp'], valid_window=2):
+                    auth_match = True
+                    break
+                # Try the interval we specified
+                otp_obj = pyotp.TOTP(auth_row['secret'], interval=60)
+                if otp_obj.verify(args['otp'], valid_window=1):
+                    auth_match = True
+                    break
+            if not auth_match:
+                raise web.HTTPForbidden()
+        else:
+            raise web.HTTPBadRequest()
+
         if card_data['status'] != 'activated':
             raise web.HTTPForbidden()
         cust_data = await self._get_account_data(card_data['account'])
@@ -329,7 +360,38 @@ class ShadyBucksAPIDaemon:
         merchant_data = await self._get_account_data(await self._get_auth_account(request))
         if not (merchant_data['partner'] or merchant_data['admin'] or merchant_data['special']):
             raise web.HTTPForbidden()
-        card_data = await self._get_account_from_magstripe(args)
+        
+        card_data = {}
+
+        if ('magstripe' in args and len(args['magstripe'])) or \
+            ('track1' in args and len(args['track1'])) or \
+            ('track2' in args and len(args['track2'])):
+            card_data = self._get_account_from_magstripe(args)
+        elif ('pan' in args and len(args['pan'])) and \
+            ('otp' in args and len(args['otp'])):
+            card_row = await self._psql_pool.fetchrow('SELECT * FROM cards WHERE pan = $1', args['pan'])
+            if not card_row:
+                raise web.HTTPNotFound()
+            card_data = { 'account': card_row['account_id'], 'status': card_row['status'], 'card': { 'pan': args['pan'] } }
+            auth_rows = await self._psql_pool.fetch('SELECT s.account_id, s.id, s.type, s.secret ' \
+                'FROM secrets s where s.account_id = $1 and s.type =\'totp\'', card_row['account_id'])
+            auth_match = False
+            for auth_row in auth_rows:
+                # Try Google Authenticator codes first, which ignore the interval we specify
+                otp_obj = pyotp.TOTP(auth_row['secret'], interval=30)
+                if otp_obj.verify(args['otp'], valid_window=2):
+                    auth_match = True
+                    break
+                # Try the interval we specified
+                otp_obj = pyotp.TOTP(auth_row['secret'], interval=60)
+                if otp_obj.verify(args['otp'], valid_window=1):
+                    auth_match = True
+                    break
+            if not auth_match:
+                raise web.HTTPForbidden()
+        else:
+            raise web.HTTPBadRequest()
+
         if card_data['status'] != 'activated':
             return web.HTTPBadRequest()
         cust_data = await self._get_account_data(card_data['account'])
