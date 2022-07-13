@@ -70,6 +70,10 @@ class ShadyBucksFrontEndDaemon:
     async def post_login(self, request):
         data = await request.post()
         await self.check_csrf_token(request, data)
+        if 'pan' in data:
+            data['pan'].replace(' ', '')
+        if 'otp' in data:
+            data['pan'].replace(' ', '')
         login_resp = await self._api_client_session.post('http://api-endpoint:8080/api/login', data=data)
         if login_resp.status == 201:
             auth_token = await login_resp.text()

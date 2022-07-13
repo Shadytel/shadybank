@@ -106,10 +106,11 @@ class ShadyBucksAPIDaemon:
             raise web.HTTPBadRequest()
         if auth_rows:
             for auth_row in auth_rows:
-                if 'password' in args and auth_row['type'] == 'password':
+                if 'password' in args and len(args['password']) and auth_row['type'] == 'password':
                     if argon2.verify(args['password'], auth_row['secret']):
                         return await self.handle_login_success(request, auth_row)
-                if 'otp' in args and auth_row['type'] == 'totp':
+                if 'pin' in args and len(args['pin']) and auth_row['type'] == 'password':
+                if 'otp' in args and len(args['otp]) and auth_row['type'] == 'totp':
                     # Try Google Authenticator codes first, which ignore the interval we specify
                     otp_obj = pyotp.TOTP(auth_row['secret'], interval=30)
                     if otp_obj.verify(args['otp'], valid_window=2):
@@ -225,7 +226,7 @@ class ShadyBucksAPIDaemon:
         if ('magstripe' in args and len(args['magstripe'])) or \
             ('track1' in args and len(args['track1'])) or \
             ('track2' in args and len(args['track2'])):
-            card_data = self._get_account_from_magstripe(args)
+            card_data = await self._get_account_from_magstripe(args)
         elif ('pan' in args and len(args['pan'])) and \
             ('otp' in args and len(args['otp'])):
             card_row = await self._psql_pool.fetchrow('SELECT * FROM cards WHERE pan = $1', args['pan'])
@@ -366,7 +367,7 @@ class ShadyBucksAPIDaemon:
         if ('magstripe' in args and len(args['magstripe'])) or \
             ('track1' in args and len(args['track1'])) or \
             ('track2' in args and len(args['track2'])):
-            card_data = self._get_account_from_magstripe(args)
+            card_data = await self._get_account_from_magstripe(args)
         elif ('pan' in args and len(args['pan'])) and \
             ('otp' in args and len(args['otp'])):
             card_row = await self._psql_pool.fetchrow('SELECT * FROM cards WHERE pan = $1', args['pan'])
