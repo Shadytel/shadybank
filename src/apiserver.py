@@ -240,7 +240,7 @@ class ShadyBucksAPIDaemon:
         args = await request.post()
         if not 'amount' in args:
             raise web.HTTPBadRequest()
-        amount = float(args['amount'])
+        amount = round(float(args['amount']), 2)
         if amount <= 0:
             raise web.HTTPBadRequest()
         merchant_data = await self._get_account_data(await self._get_auth_account(request))
@@ -295,7 +295,7 @@ class ShadyBucksAPIDaemon:
         args = await request.post()
         if (not 'amount' in args) or (not 'auth_code' in args):
             raise web.HTTPBadRequest()
-        amount = float(args['amount'])
+        amount = round(float(args['amount']), 2)
         if amount <= 0:
             raise web.HTTPBadRequest()
         merchant_data = await self._get_account_data(await self._get_auth_account(request))
@@ -380,7 +380,7 @@ class ShadyBucksAPIDaemon:
         args = await request.post()
         if not 'amount' in args:
             raise web.HTTPBadRequest()
-        amount = float(args['amount'])
+        amount = round(float(args['amount']), 2)
         if amount <= 0:
             raise web.HTTPBadRequest()
         merchant_data = await self._get_account_data(await self._get_auth_account(request))
