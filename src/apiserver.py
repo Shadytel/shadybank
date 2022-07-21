@@ -89,6 +89,20 @@ class ShadyBucksAPIDaemon:
 
         return tokens[1]
 
+    async def _check_ratelimit(self, key, limit, expiration_in_secs):
+        key = 'rate_limit:{}'.format(key)
+        val = await self._redis_pool.incr(key)
+        await self._redis_pool.expire(key, expiration_in_secs)
+        if val > limit:
+            raise web.HTTPUnauthorized()
+        
+    async def _check_otp_ratelimit(self, pan):
+        key = 'otp:{}'.format(pan)
+        await self._check_ratelimit(key, 5, 600)
+
+    async def _check_merchant_ratelimit(self, account_id):
+        await self._check_ratelimit('merchant:{}'.format(account_id), 3, 30)
+    
     async def post_login(self, request):
         args = await request.post()
         auth_rows = None
@@ -102,11 +116,16 @@ class ShadyBucksAPIDaemon:
         if 'pan' in args:
             auth_rows = await self._psql_pool.fetch('SELECT s.account_id, s.id, s.type, s.secret ' \
                 'FROM cards c, secrets s where c.pan = $1 AND s.account_id = c.account_id', args['pan'])
+            if len(args['otp']):
+                self._check_otp_ratelimit(args['pan'])
         elif 'account_id' in args:
             auth_rows = await self._psql_pool.fetch('SELECT s.account_id, s.id, s.type, s.secret ' \
                 'FROM secrets s where s.account_id = $1', int(args['account_id']))
+            if len(args['otp']):
+                self._check_otp_ratelimit(args['account_id'])
         else:
             raise web.HTTPBadRequest()
+
         if auth_rows:
             for auth_row in auth_rows:
                 if 'password' in args and len(args['password']) and auth_row['type'] == 'password':
@@ -238,6 +257,7 @@ class ShadyBucksAPIDaemon:
             if not card_row:
                 raise web.HTTPNotFound()
             card_data = { 'account': card_row['account_id'], 'status': card_row['status'], 'card': { 'pan': args['pan'] } }
+            self._check_otp_ratelimit(args['pan'])
             auth_rows = await self._psql_pool.fetch('SELECT s.account_id, s.id, s.type, s.secret ' \
                 'FROM secrets s where s.account_id = $1 and s.type =\'totp\'', card_row['account_id'])
             auth_match = False
@@ -379,27 +399,9 @@ class ShadyBucksAPIDaemon:
             if not card_row:
                 raise web.HTTPNotFound()
             card_data = { 'account': card_row['account_id'], 'status': card_row['status'], 'card': { 'pan': args['pan'] } }
-            auth_rows = await self._psql_pool.fetch('SELECT s.account_id, s.id, s.type, s.secret ' \
-                'FROM secrets s where s.account_id = $1 and s.type =\'totp\'', card_row['account_id'])
-            auth_match = False
-            for auth_row in auth_rows:
-                # Try Google Authenticator codes first, which ignore the interval we specify
-                otp_obj = pyotp.TOTP(auth_row['secret'], interval=30)
-                if otp_obj.verify(args['otp'], valid_window=2):
-                    auth_match = True
-                    break
-                # Try the interval we specified
-                otp_obj = pyotp.TOTP(auth_row['secret'], interval=60)
-                if otp_obj.verify(args['otp'], valid_window=1):
-                    auth_match = True
-                    break
-            if not auth_match:
-                raise web.HTTPForbidden()
         else:
             raise web.HTTPBadRequest()
 
-        if card_data['status'] != 'activated':
-            return web.HTTPBadRequest()
         cust_data = await self._get_account_data(card_data['account'])
         async with self._psql_pool.acquire() as con:
             async with con.transaction():
