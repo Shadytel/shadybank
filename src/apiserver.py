@@ -384,7 +384,7 @@ class ShadyBucksAPIDaemon:
         if amount <= 0:
             raise web.HTTPBadRequest()
         merchant_data = await self._get_account_data(await self._get_auth_account(request))
-        if not (merchant_data['partner'] or merchant_data['admin'] or merchant_data['special']):
+        if merchant_data['available'] < amount and (not (merchant_data['partner'] or merchant_data['admin'] or merchant_data['special'])):
             raise web.HTTPForbidden()
 
         card_data = {}
