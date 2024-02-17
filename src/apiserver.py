@@ -12,7 +12,8 @@ import pyotp
 import os
 import re
 import secrets
-import time
+from datetime import datetime
+from datetime import timedelta
 
 track1_re = re.compile(r'(?a)%B(?P<pan>\d{8,19})\^(?P<name>.*)\^(?P<exp>\d{4})(?P<svc>\d{3})(?P<dd1>.*?)\?')
 track2_re = re.compile(r'(?a);(?P<pan>\d{8,19})=(?P<exp>\d{4})(?P<svc>\d{3})(?P<dd2>.*?)\?')
@@ -252,7 +253,7 @@ class ShadyBucksAPIDaemon:
             ('track2' in args and len(args['track2'])):
             card_data = await self._get_account_from_magstripe(args)
         elif ('pan' in args and len(args['pan'])) and \
-            ('otp' in args and len(args['otp'])):
+            (('otp' in args and len(args['otp'])) or ('shotp' in args and len(args['shotp']))):
             card_row = await self._psql_pool.fetchrow('SELECT * FROM cards WHERE pan = $1', args['pan'])
             if not card_row:
                 raise web.HTTPNotFound()
@@ -264,12 +265,23 @@ class ShadyBucksAPIDaemon:
             for auth_row in auth_rows:
                 # Try Google Authenticator codes first, which ignore the interval we specify
                 otp_obj = pyotp.TOTP(auth_row['secret'], interval=30)
-                if otp_obj.verify(args['otp'], valid_window=2):
+                if ('otp' in args and len(args['otp'])) and otp_obj.verify(args['otp'], valid_window=2):
+                    auth_match = True
+                    break
+                elif ('shotp' in args and len(args['shotp'])) and \
+                    (otp_obj.now()[0:4] == args['shotp'] or \
+                     otp_obj.at(datetime.now() - timedelta(seconds=30))[0:4] == args['shopt'] or \
+                     otp_obj.at(datetime.now() - timedelta(seconds=60))[0:4] == args['shopt']):
                     auth_match = True
                     break
                 # Try the interval we specified
                 otp_obj = pyotp.TOTP(auth_row['secret'], interval=60)
-                if otp_obj.verify(args['otp'], valid_window=1):
+                if ('otp' in args and len(args['otp'])) and otp_obj.verify(args['otp'], valid_window=1):
+                    auth_match = True
+                    break
+                elif ('shotp' in args and len(args['shotp'])) and \
+                    (otp_obj.now()[0:4] == args['shotp'] or \
+                     otp_obj.at(datetime.now() - timedelta(seconds=60))[0:4] == args['shopt']):
                     auth_match = True
                     break
             if not auth_match:
