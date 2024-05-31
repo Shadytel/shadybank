@@ -445,30 +445,29 @@ class ShadyBucksAPIDaemon:
         if not 'chal' in args:
             raise web.HTTPBadRequest()
 
-        uid = bytes.fromhex(args['uid'])
-        if len(uid) != 7:
+        uid = args['uid'].lower()
+        if len(uid) != 14:
             raise web.HTTPBadRequest()
         chal = bytes.fromhex(args['chal'])
         if len(chal) != 8:
             raise web.HTTPBadRequest()
 
-        async with self._psql_pool.acquire() as con:
-            keys = await con.fetchrow('SELECT des_key1, des_key2 from nfc_keys WHERE uid = $1', uid)
-            key = b''.join(keys)
+        keys = await self._psql_pool.fetchrow('SELECT des_key1, des_key2 from nfc_keys WHERE uid = $1', uid)
         if not keys:
             raise web.HTTPNotFound()
+        key = bytes.fromhex(''.join(keys))
 
-        des = DES3.new(key, DES3.MODE_CBC, iv='\x00' * 8)
+        des = DES3.new(key, DES3.MODE_CBC, iv=b'\x00' * 8)
         rndB = des.decrypt(chal)
-        rndBPrime = rndB[1:] + rndB[0]
+        rndBPrime = rndB[1:] + rndB[0:1]
         des = DES3.new(key, DES3.MODE_CBC, iv=chal)
         rndA = get_random_bytes(8)
-        rndAPrime = rndA[1:] + rndA[0]
+        rndAPrime = rndA[1:] + rndA[0:1]
         resp = des.encrypt(rndA + rndBPrime)
         des = DES3.new(key, DES3.MODE_CBC, iv=resp[8:16])
         expectedResp = des.encrypt(rndAPrime)
 
-        await self._redis_pool.setex(f'nfc_auth_expected:{uid + chal}', 300, expectedResp)
+        await self._redis_pool.setex(f'nfc_auth_expected:{uid}:{chal.hex()}', 300, expectedResp.hex())
 
         return web.json_response({ 'resp': resp.hex() })
 
@@ -481,17 +480,17 @@ class ShadyBucksAPIDaemon:
         if not 'resp' in args:
             raise web.HTTPBadRequest()
 
-        uid = bytes.fromhex(args['uid'])
-        if len(uid) != 7:
+        uid = args['uid'].lower()
+        if len(uid) != 14:
             raise web.HTTPBadRequest()
-        chal = bytes.fromhex(args['chal'])
-        if len(chal) != 8:
+        chal = args['chal'].lower()
+        if len(chal) != 16:
             raise web.HTTPBadRequest()
-        resp = bytes.fromhex(args['resp'])
-        if len(resp) != 8:
+        resp = args['resp'].lower()
+        if len(resp) != 16:
             raise web.HTTPBadRequest()
 
-        expectedResp = await self._redis_pool.get(f'nfc_auth_expected:{uid + chal}')
+        expectedResp = await self._redis_pool.get(f'nfc_auth_expected:{uid}:{chal}')
         if not expectedResp:
             raise web.HTTPNotFound()
         if expectedResp != resp:
