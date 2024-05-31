@@ -11,7 +11,7 @@ create type card_status as enum ('unallocated', 'issued', 'activated', 'blocked'
 create table cards (pan varchar(19) NOT NULL PRIMARY KEY, account_id integer, name varchar(80), expires char(4) not null, 
 dd1 varchar(31), dd2 numeric(31), status card_status, constraint fk_account_id foreign key (account_id) references accounts(id));
 
-create type secrets_type as enum ('pin', 'password', 'totp', 'webauthn');
+create type secrets_type as enum ('pin', 'password', 'totp', 'webauthn', 'shopt');
 
 create table secrets (id serial primary key, account_id int, type secrets_type, secret text, created_at timestamp 
 not null default NOW(), last_used timestamp, constraint fk_account_id foreign key (account_id) references accounts(id));
@@ -32,3 +32,9 @@ constraint fk_debit_aid foreign key (debit_account) references accounts(id),
 constraint fk_credit_aid foreign key (credit_account) references accounts(id),
 unique(credit_account, auth_code));
 
+create table tokens (token char(16) primary key, account_id int, created_at timestamp not null default NOW(),
+expires timestamp not null default NOW() + INTERVAL '72 hours', can_initiate_transaction bool not null default true,
+constraint fk_account_id foreign key (account_id) references accounts(id));
+
+create table nfc_keys (uid char(7) primary key, des_key1 char(8) not null, des_key2 char(8) not null,
+aes_key BLOB(16) not null, created_at timestamp not null default NOW());

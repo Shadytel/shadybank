@@ -12,6 +12,8 @@ import pyotp
 import os
 import re
 import secrets
+from Crypto.Cipher import DES3
+from Crypto.Random import get_random_bytes
 from datetime import datetime
 from datetime import timedelta
 
@@ -61,6 +63,10 @@ class ShadyBucksAPIDaemon:
         self._app.add_routes([web.post('/api/void', self.post_void)])
         self._app.add_routes([web.post('/api/reverse', self.post_reverse)])
         self._app.add_routes([web.post('/api/credit', self.post_credit)])
+
+        # NFC APIs
+        self._app.add_routes([web.post('/api/nfc_challenge', self.post_nfc_challenge)])
+        self._app.add_routes([web.post('/api/nfc_response', self.post_nfc_response)])
 
         # Admin APIs
         self._app.add_routes([web.post('/api/activate', self.post_activate)])
@@ -431,6 +437,67 @@ class ShadyBucksAPIDaemon:
                     'type, description) VALUES($1, $2, $3, $4, $5, $6)', merchant_data['id'],
                     cust_data['id'], amount, card_data['card']['pan'], "credit_points", description)
         return web.Response(status=204)
+
+    async def post_nfc_challenge(self, request):
+        args = await request.post()
+        if not 'uid' in args:
+            raise web.HTTPBadRequest()
+        if not 'chal' in args:
+            raise web.HTTPBadRequest()
+
+        uid = base64.b32decode(args['uid'])
+        if len(uid) != 7:
+            raise web.HTTPBadRequest()
+        chal = base64.b32decode(args['chal'])
+        if len(chal) != 8:
+            raise web.HTTPBadRequest()
+
+        async with self._psql_pool.acquire() as con:
+            keys = await con.fetchrow('SELECT des_key1, des_key2 from nfc_keys WHERE uid = $1', uid)
+            key = b''.join(keys)
+        if not keys:
+            raise web.HTTPNotFound()
+
+        des = DES3.new(key, DES3.MODE_CBC, iv='\x00' * 8)
+        rndB = des.decrypt(chal)
+        rndBPrime = rndB[1:] + rndB[0]
+        des = DES3.new(key, DES3.MODE_CBC, iv=chal)
+        rndA = get_random_bytes(8)
+        rndAPrime = rndA[1:] + rndA[0]
+        resp = des.encrypt(rndA + rndBPrime)
+        des = DES3.new(key, DES3.MODE_CBC, iv=resp[8:16])
+        expectedResp = des.encrypt(rndAPrime)
+
+        await self._redis_pool.setex(f'nfc_auth_expected:{uid + chal}', 300, expectedResp)
+
+        return web.json_response({ 'resp': base64.b32encode(resp).decode('utf-8') })
+
+    async def post_nfc_response(self, request):
+        args = await request.post()
+        if not 'uid' in args:
+            raise web.HTTPBadRequest()
+        if not 'chal' in args:
+            raise web.HTTPBadRequest()
+        if not 'resp' in args:
+            raise web.HTTPBadRequest()
+
+        uid = base64.b32decode(args['uid'])
+        if len(uid) != 7:
+            raise web.HTTPBadRequest()
+        chal = base64.b32decode(args['chal'])
+        if len(chal) != 8:
+            raise web.HTTPBadRequest()
+        resp = base64.b32decode(args['resp'])
+        if len(resp) != 8:
+            raise web.HTTPBadRequest()
+
+        expectedResp = await self._redis_pool.get(f'nfc_auth_expected:{uid + chal}')
+        if not expectedResp:
+            raise web.HTTPNotFound()
+        if expectedResp != resp:
+            raise web.HTTPUnauthorized()
+
+        return web.json_response({ "you": "hacker" })
 
     async def post_activate(self, request):
         args = await request.post()
