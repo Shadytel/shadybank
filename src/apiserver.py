@@ -445,10 +445,10 @@ class ShadyBucksAPIDaemon:
         if not 'chal' in args:
             raise web.HTTPBadRequest()
 
-        uid = base64.b32decode(args['uid'])
+        uid = bytes.fromhex(args['uid'])
         if len(uid) != 7:
             raise web.HTTPBadRequest()
-        chal = base64.b32decode(args['chal'])
+        chal = bytes.fromhex(args['chal'])
         if len(chal) != 8:
             raise web.HTTPBadRequest()
 
@@ -470,7 +470,7 @@ class ShadyBucksAPIDaemon:
 
         await self._redis_pool.setex(f'nfc_auth_expected:{uid + chal}', 300, expectedResp)
 
-        return web.json_response({ 'resp': base64.b32encode(resp).decode('utf-8') })
+        return web.json_response({ 'resp': resp.hex() })
 
     async def post_nfc_response(self, request):
         args = await request.post()
@@ -481,13 +481,13 @@ class ShadyBucksAPIDaemon:
         if not 'resp' in args:
             raise web.HTTPBadRequest()
 
-        uid = base64.b32decode(args['uid'])
+        uid = bytes.fromhex(args['uid'])
         if len(uid) != 7:
             raise web.HTTPBadRequest()
-        chal = base64.b32decode(args['chal'])
+        chal = bytes.fromhex(args['chal'])
         if len(chal) != 8:
             raise web.HTTPBadRequest()
-        resp = base64.b32decode(args['resp'])
+        resp = bytes.fromhex(args['resp'])
         if len(resp) != 8:
             raise web.HTTPBadRequest()
 

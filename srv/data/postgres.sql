@@ -37,4 +37,4 @@ expires timestamp not null default NOW() + INTERVAL '72 hours', can_initiate_tra
 constraint fk_account_id foreign key (account_id) references accounts(id));
 
 create table nfc_keys (uid char(7) primary key, des_key1 char(8) not null, des_key2 char(8) not null,
-aes_key BLOB(16) not null, created_at timestamp not null default NOW());
+aes_key char(16) not null, created_at timestamp not null default NOW());
