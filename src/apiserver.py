@@ -270,8 +270,8 @@ class ShadyBucksAPIDaemon:
                     break
                 elif ('shotp' in args and len(args['shotp'])) and \
                     (otp_obj.now()[0:4] == args['shotp'] or \
-                     otp_obj.at(datetime.now() - timedelta(seconds=30))[0:4] == args['shopt'] or \
-                     otp_obj.at(datetime.now() - timedelta(seconds=60))[0:4] == args['shopt']):
+                     otp_obj.at(datetime.now() - timedelta(seconds=30))[0:4] == args['shotp'] or \
+                     otp_obj.at(datetime.now() - timedelta(seconds=60))[0:4] == args['shotp']):
                     auth_match = True
                     break
                 # Try the interval we specified
@@ -281,7 +281,7 @@ class ShadyBucksAPIDaemon:
                     break
                 elif ('shotp' in args and len(args['shotp'])) and \
                     (otp_obj.now()[0:4] == args['shotp'] or \
-                     otp_obj.at(datetime.now() - timedelta(seconds=60))[0:4] == args['shopt']):
+                     otp_obj.at(datetime.now() - timedelta(seconds=60))[0:4] == args['shotp']):
                     auth_match = True
                     break
             if not auth_match:
