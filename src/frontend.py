@@ -45,8 +45,11 @@ class ShadyBucksFrontEndDaemon:
     async def ensure_session_cookie(self, request, handler):
         sid = request.cookies.get('sid')
         nsid = None
-        if not sid:
+        if sid:
+            request.auth_token = await self._redis_pool.get('sid:{}'.format(sid))
+        if not sid or request.auth_token is None:
             nsid = sid = secrets.token_urlsafe()
+            request.auth_token = ''
             await self._redis_pool.setex('sid:{}'.format(sid), 2592000, '')
         csrf_token = secrets.token_urlsafe()
         await self._redis_pool.setex('csrf:{}'.format(csrf_token), 86400, sid)
@@ -103,16 +106,14 @@ class ShadyBucksFrontEndDaemon:
     async def post_logout(self, request):
         data = await request.post()
         await self.check_csrf_token(request, data)
-        auth_token = await self._redis_pool.get('sid:{}'.format(request['SID']));
-        auth_header = { 'Authorization': 'Bearer ' + auth_token }
+        auth_header = { 'Authorization': 'Bearer ' + request.auth_token }
         logout_resp = await self._api_client_session.post('http://api-endpoint:8080/api/logout', headers=auth_header)
         await self._redis_pool.setex('sid:{}'.format(request['SID']), 2592000, '')
         return await self.get_login(request, False)
 
     async def get_account(self, request):
         context = { 'CSRF_TOKEN': request['CSRF_TOKEN'] }
-        auth_token = await self._redis_pool.get('sid:{}'.format(request['SID']));
-        auth_header = { 'Authorization': 'Bearer ' + auth_token }
+        auth_header = { 'Authorization': 'Bearer ' + request.auth_token }
         balance_resp = await self._api_client_session.get('http://api-endpoint:8080/api/balance', headers=auth_header)
         if balance_resp.status == 200:
             balance_json = await balance_resp.json()
@@ -132,8 +133,7 @@ class ShadyBucksFrontEndDaemon:
     async def post_capture(self, request):
         data = await request.post()
         await self.check_csrf_token(request, data)
-        auth_token = await self._redis_pool.get('sid:{}'.format(request['SID']));
-        auth_header = { 'Authorization': 'Bearer ' + auth_token }
+        auth_header = { 'Authorization': 'Bearer ' + request.auth_token }
         resp = await self._api_client_session.post('http://api-endpoint:8080/api/capture',
             data=data, headers=auth_header)
         if resp.status == 204:
@@ -146,8 +146,7 @@ class ShadyBucksFrontEndDaemon:
     async def post_void(self, request):
         data = await request.post()
         await self.check_csrf_token(request, data)
-        auth_token = await self._redis_pool.get('sid:{}'.format(request['SID']));
-        auth_header = { 'Authorization': 'Bearer ' + auth_token }
+        auth_header = { 'Authorization': 'Bearer ' + request.auth_token }
         resp = await self._api_client_session.post('http://api-endpoint:8080/api/void',
             data=data, headers=auth_header)
         if resp.status == 204:
@@ -160,8 +159,7 @@ class ShadyBucksFrontEndDaemon:
     async def post_reverse(self, request):
         data = await request.post()
         await self.check_csrf_token(request, data)
-        auth_token = await self._redis_pool.get('sid:{}'.format(request['SID']));
-        auth_header = { 'Authorization': 'Bearer ' + auth_token }
+        auth_header = { 'Authorization': 'Bearer ' + request.auth_token }
         resp = await self._api_client_session.post('http://api-endpoint:8080/api/reverse',
             data=data, headers=auth_header)
         if resp.status == 204:
@@ -173,8 +171,7 @@ class ShadyBucksFrontEndDaemon:
 
     async def get_transact(self, request):
         context = { 'CSRF_TOKEN': request['CSRF_TOKEN'] }    
-        auth_token = await self._redis_pool.get('sid:{}'.format(request['SID']));
-        auth_header = { 'Authorization': 'Bearer ' + auth_token }
+        auth_header = { 'Authorization': 'Bearer ' + request.auth_token }
         balance_resp = await self._api_client_session.get('http://api-endpoint:8080/api/balance', headers=auth_header)
         if balance_resp.status == 200:
             balance_json = await balance_resp.json()
@@ -186,8 +183,7 @@ class ShadyBucksFrontEndDaemon:
     async def post_transact(self, request):
         data = await request.post()
         await self.check_csrf_token(request, data)
-        auth_token = await self._redis_pool.get('sid:{}'.format(request['SID']));
-        auth_header = { 'Authorization': 'Bearer ' + auth_token }
+        auth_header = { 'Authorization': 'Bearer ' + request.auth_token }
         message = 'Failed'
         if 'txn_type' in data:
             if data['txn_type'] == 'preauth' or data['txn_type'] == 'purchase':
@@ -225,8 +221,7 @@ class ShadyBucksFrontEndDaemon:
     async def post_activate(self, request):
         data = await request.post()
         await self.check_csrf_token(request, data)
-        auth_token = await self._redis_pool.get('sid:{}'.format(request['SID']));
-        auth_header = { 'Authorization': 'Bearer ' + auth_token }
+        auth_header = { 'Authorization': 'Bearer ' + request.auth_token }
         act_resp = await self._api_client_session.post('http://api-endpoint:8080/api/activate',
             data=data, headers=auth_header)
         if act_resp.status != 200:
