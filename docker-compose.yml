@@ -1,5 +1,3 @@
-version: '3.4'
-
 services:
   frontend:
     build:
@@ -33,6 +31,7 @@ services:
       POSTGRES_DB: shadybucks
     volumes:
       - ./srv/data/postgres.sql:/docker-entrypoint-initdb.d/00-create_db.sql
+      - shadybucks-db:/var/lib/postgresql/data
     healthcheck:
       test: [ "CMD", "pg_isready", "-q", "-d", "shadybucks", "-U", "shadybucks" ]
       timeout: 45s
@@ -46,3 +45,5 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+volumes:
+  shadybucks-db:
