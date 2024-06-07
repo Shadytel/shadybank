@@ -109,7 +109,7 @@ class ShadyBucksFrontEndDaemon:
         auth_header = { 'Authorization': 'Bearer ' + request.auth_token }
         logout_resp = await self._api_client_session.post('http://api-endpoint:8080/api/logout', headers=auth_header)
         await self._redis_pool.setex('sid:{}'.format(request['SID']), 2592000, '')
-        return await self.get_login(request, False)
+        raise web.HTTPFound('/app/login')
 
     async def get_account(self, request):
         context = { 'CSRF_TOKEN': request['CSRF_TOKEN'] }
