@@ -1,0 +1,13 @@
+{% extends "site.html" %}
+{% block title %}Shadybucks: Log In{% endblock title %}
+{% block headline %}Shadybucks: Log In{% endblock headline %}
+{% block scripts %}<script src="/static/nfc.js"></script>{% endblock scripts %}
+
+{% block body %}
+{% if failed %}<h4>LOG IN FAILED! Please Try again.</h4>{% endif %}
+<form method="post">
+  <input type="hidden" name="CSRF_TOKEN" value="{{ CSRF_TOKEN }}">
+  <input type="hidden" name="auth_token">
+</form>
+<button id="tap-button" onclick="scanWristband();">Scan Wristband</button>
+{% endblock body %}

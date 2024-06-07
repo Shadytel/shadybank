@@ -29,6 +29,7 @@ class ShadyBucksFrontEndDaemon:
         self._app.add_routes([web.post('/app/transact', self.post_transact)])
         self._app.add_routes([web.get('/app/activate', self.get_activate)])
         self._app.add_routes([web.post('/app/activate', self.post_activate)])
+        self._app.add_routes([web.get('/app/app-login', self.get_app_login)])
 
         self._app.add_routes([web.static('/static', os.path.join(os.getcwd() ,'website/static'))])
 
@@ -232,6 +233,10 @@ class ShadyBucksFrontEndDaemon:
             return aiohttp_jinja2.render_template('status-message.html', request,
                 { 'message': 'Backend said ' + str(act_resp.status) })    
         return aiohttp_jinja2.render_template('activate-result.html', request, await act_resp.json())
+
+    async def get_app_login(self, request, failed = False):
+        context = { 'CSRF_TOKEN': request['CSRF_TOKEN'], 'failed': failed }
+        return aiohttp_jinja2.render_template('app-login.html', request, context)
 
 def main():
     arg_parser = argparse.ArgumentParser(description='ShadyBucks frontend server')
