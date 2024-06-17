@@ -30,6 +30,7 @@ class ShadyBucksFrontEndDaemon:
         self._app.add_routes([web.get('/app/activate', self.get_activate)])
         self._app.add_routes([web.post('/app/activate', self.post_activate)])
         self._app.add_routes([web.get('/app/app-login', self.get_app_login)])
+        self._app.add_routes([web.get('/app/activate-wristband', self.get_activate_wristband)])
 
         self._app.add_routes([web.static('/static', os.path.join(os.getcwd() ,'website/static'))])
 
@@ -232,6 +233,10 @@ class ShadyBucksFrontEndDaemon:
     async def get_app_login(self, request, failed = False):
         context = { 'CSRF_TOKEN': request['CSRF_TOKEN'], 'failed': failed }
         return aiohttp_jinja2.render_template('app-login.html', request, context)
+
+    async def get_activate_wristband(self, request, failed = False):
+        context = { 'CSRF_TOKEN': request['CSRF_TOKEN'], 'failed': failed }
+        return aiohttp_jinja2.render_template('activate-wristband.html', request, context)
 
 def main():
     arg_parser = argparse.ArgumentParser(description='ShadyBucks frontend server')

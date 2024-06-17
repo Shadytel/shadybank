@@ -2,6 +2,9 @@ var appPort;
 var uid;
 var chal;
 var tagAuthState;
+var nfc_token;
+var activate_wristband = true;
+
 
 async function handleAppMsg(event) {
   console.log(event.data);
@@ -33,9 +36,23 @@ async function handleAppMsg(event) {
         method: "POST",
         body: data
       });
-      resp = await req.text();
-      console.log(resp);
+      resp = await req.json();
+      nfc_token = resp.nfc_token;
+
+      if (activate_wristband) {
+        data = new FormData();
+        data.append("nfc_token", nfc_token);
+        req = await fetch("/api/nfc_activate", {
+          method: "POST",
+          body: data
+        });
+        resp = await req.json();
+        resp.msg = "tagBulkSend";
+        appPort.postMessage(JSON.stringify(resp));
+      }
     }
+  } else {
+    console.log(msg);
   }
 }
 

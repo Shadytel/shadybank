@@ -67,6 +67,8 @@ class ShadyBucksAPIDaemon:
         # NFC APIs
         self._app.add_routes([web.post('/api/nfc_challenge', self.post_nfc_challenge)])
         self._app.add_routes([web.post('/api/nfc_response', self.post_nfc_response)])
+        self._app.add_routes([web.post('/api/nfc_activate', self.post_nfc_activate)])
+        self._app.add_routes([web.post('/api/nfc_link', self.post_nfc_link)])
 
         # Admin APIs
         self._app.add_routes([web.post('/api/activate', self.post_activate)])
@@ -243,6 +245,26 @@ class ShadyBucksAPIDaemon:
         else:
             raise web.HTTPNotFound()
 
+    async def _get_account_from_wristband(self, args):
+        uid = None
+
+        if 'nfc_token' in args:
+            nfc_token = args['nfc_token']
+            uid = await self._redis_pool.get(f'nfc_token:{nfc_token}')
+            await self._redis_pool.delete(f'nfc_token:{nfc_token}')
+        else:
+            raise web.HTTPBadRequest()
+
+        if not uid:
+            raise web.HTTPUnauthorized()
+
+        card_row = await self._psql_pool.fetchrow('SELECT * FROM cards WHERE pan = $1', uid)
+        if not card_row:
+            raise web.HTTPNotFound()
+
+        return { 'account': card_row['account_id'], 'status': card_row['status'],
+                'card': { 'pan': uid } }
+
     async def post_authorize(self, request):
         args = await request.post()
         if not 'amount' in args:
@@ -258,6 +280,8 @@ class ShadyBucksAPIDaemon:
             ('track1' in args and len(args['track1'])) or \
             ('track2' in args and len(args['track2'])):
             card_data = await self._get_account_from_magstripe(args)
+        elif 'nfc_token' in args:
+            card_data = await self._get_account_from_wristband(args)
         elif ('pan' in args and len(args['pan'])) and \
             (('otp' in args and len(args['otp'])) or ('shotp' in args and len(args['shotp']))):
             card_row = await self._psql_pool.fetchrow('SELECT * FROM cards WHERE pan = $1', args['pan'])
@@ -454,7 +478,8 @@ class ShadyBucksAPIDaemon:
 
         keys = await self._psql_pool.fetchrow('SELECT des_key1, des_key2 from nfc_keys WHERE uid = $1', uid)
         if not keys:
-            raise web.HTTPNotFound()
+            # NXP default keys
+            keys = ['49454D4B41455242', '214E4143554F5946']
         key = bytes.fromhex(''.join(keys))
 
         des = DES3.new(key, DES3.MODE_CBC, iv=b'\x00' * 8)
@@ -496,7 +521,46 @@ class ShadyBucksAPIDaemon:
         if expectedResp != resp:
             raise web.HTTPUnauthorized()
 
-        return web.json_response({ "you": "hacker" })
+        nfc_token = secrets.token_urlsafe()
+        await self._redis_pool.setex('nfc_token:{}'.format(nfc_token), 60, uid)
+        return web.json_response({ "nfc_token": nfc_token })
+
+    async def post_nfc_activate(self, request):
+        args = await request.post()
+        if not 'nfc_token' in args:
+            raise web.HTTPBadRequest()
+
+        merchant_data = await self._get_account_data(await self._get_auth_account(request))
+        if not merchant_data['admin']:
+            raise web.HTTPForbidden()
+
+        nfc_token = args['nfc_token']
+        uid = await self._redis_pool.get(f'nfc_token:{nfc_token}')
+        if not uid:
+            raise web.HTTPUnauthorized()
+
+        des_key1 = secrets.token_bytes(8).hex()
+        des_key2 = secrets.token_bytes(8).hex()
+        aes_key = secrets.token_bytes(16).hex()
+        await self._redis_pool.delete(f'nfc_token:{nfc_token}')
+        await self._psql_pool.execute('INSERT INTO nfc_keys (uid, des_key1, des_key2, aes_key) VALUES ($1, $2, $3, $4)',
+                                      uid, des_key1, des_key2, aes_key)
+
+        return web.json_response({ "cmds": [
+            f"a22c{des_key1[14:16]}{des_key1[12:14]}{des_key1[10:12]}{des_key1[8:10]}",
+            f"a22d{des_key1[6:8]}{des_key1[4:6]}{des_key1[2:4]}{des_key1[0:2]}",
+            f"a22e{des_key2[14:16]}{des_key2[12:14]}{des_key2[10:12]}{des_key2[8:10]}",
+            f"a22f{des_key2[6:8]}{des_key2[4:6]}{des_key2[2:4]}{des_key2[0:2]}",
+        ]})
+
+    async def post_nfc_link(self, request):
+        args = await request.post()
+        card_data = await self._get_account_from_magstripe(args)
+        nfc_data = await self._get_account_from_wristband(args)
+
+        await self._psql_pool.execute('INSERT INTO cards (pan, account_id, expires, card_status) VALUES ($1, $2, $3, $4, $5)',
+                                      nfc_data['card']['pan'], card_data['account'], '0000', card_data['status'])
+        return web.Response(status=204)
 
     async def post_activate(self, request):
         args = await request.post()
