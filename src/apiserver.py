@@ -547,6 +547,11 @@ class ShadyBucksAPIDaemon:
                                       uid, des_key1, des_key2, aes_key)
 
         return web.json_response({ "cmds": [
+            "a22a27000000",
+            "a22b00000000",
+            "a22600000000",
+            "a22700000000",
+            "a203e1101100",
             f"a22c{des_key1[14:16]}{des_key1[12:14]}{des_key1[10:12]}{des_key1[8:10]}",
             f"a22d{des_key1[6:8]}{des_key1[4:6]}{des_key1[2:4]}{des_key1[0:2]}",
             f"a22e{des_key2[14:16]}{des_key2[12:14]}{des_key2[10:12]}{des_key2[8:10]}",
