@@ -235,7 +235,7 @@ class ShadyBucksFrontEndDaemon:
         return aiohttp_jinja2.render_template('app-login.html', request, context)
 
     async def get_activate_wristband(self, request, failed = False):
-        context = { 'CSRF_TOKEN': request['CSRF_TOKEN'], 'failed': failed }
+        context = { 'CSRF_TOKEN': request['CSRF_TOKEN'], 'auth_token': request.auth_token }
         return aiohttp_jinja2.render_template('activate-wristband.html', request, context)
 
 def main():

@@ -1,0 +1,41 @@
+{% extends "site.html" %}
+{% block title %}Shadybucks: Wristband Activation{% endblock title %}
+{% block headline %}Shadybucks: Wristband Activation{% endblock headline %}
+{% block scripts %}<script src="/static/nfc.js"></script>
+<script>
+    var statusTimeout;
+
+    function resetTimeout(timeout) {
+        if (statusTimeout) {
+            clearTimeout(statusTimeout);
+        }
+        statusTimeout = setTimeout(() => {
+            document.getElementById('status').innerText = 'Tap Wristband';    
+        }, timeout);
+    }
+
+    window.onactivatesuccess = () => {
+        document.getElementById('status').innerText = 'Activated!';
+        resetTimeout(1000);
+    }
+
+    window.onactivatefail = (msg) => {
+        document.getElementById('status').innerText = 'FAILED: ' + msg;
+        resetTimeout(10000);
+    }
+
+    window.nfcerror = (msg) => {
+        document.getElementById('status').innerText = 'EXCEPTION: ' + msg;
+        resetTimeout(10000);
+    }
+
+    activate_wristband = true;
+</script>
+{% endblock scripts %}
+
+{% block body %}
+<div id="status">Tap Wristband</div>
+<form>
+<input type="hidden" id="auth_token" value="{{ auth_token }}"/>
+</form>
+{% endblock body %}

@@ -1,6 +1,14 @@
 {% extends "site.html" %}
 {% block title %}Shadybucks: Transaction Entry{% endblock title %}
 {% block headline %}Shadybucks: Transaction Entry{% endblock headline %}
+{% block scripts %}<script src="/static/nfc.js"></script>
+<script>
+  window.ontag = () => {
+    document.getElementById("nfc_token").value = nfc_token;
+    document.getElementById("transactionForm").submit();
+  }
+</script>
+{% endblock scripts %}
 
 {% block body %}
 <h3>Account Information</h3>
@@ -10,8 +18,9 @@
   <tr><td>Available Balance</td><td>{{available}}</td></tr>
 </table>
 
-<form method="post">
+<form id="transactionForm" method="post">
   <input type="hidden" name="CSRF_TOKEN" value="{{ CSRF_TOKEN }}">
+  <input type="hidden" id="nfc_token" name="nfc_token">
   <table>
     <tr><td>Transaction type:</td>
         <td>
@@ -28,7 +37,7 @@
     <tr><td>Magstripe:</td><td><input name="magstripe" autocomplete="off"></td></tr>
     <tr><td colspan="2">Manual Entry / Card Not Present</td></tr>
     <tr><td>Primary Account Number:</td><td><input name="pan" inputmode="numeric" pattern="[0-9\s]{16-19}" autocomplete="cc-number" maxlength="19" placeholder="8997 9866 722x xxxx"></td></tr>
-    <tr><td>OTP:</td><td><input inputmode="numeric" name="otp" pattern="[0-9\s]{6-7}" maxlength="7" placeholder="xxx xxx"></td></tr>
+    <tr><td>OTP:</td><td><input inputmode="numeric" name="otp" pattern="[0-9]{6}" maxlength="6" placeholder="xxxxxx"></td></tr>
     <tr><td colspan="2"><input type="submit"></td></tr>
   </table>
 </form>

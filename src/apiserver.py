@@ -272,6 +272,8 @@ class ShadyBucksAPIDaemon:
         amount = round(float(args['amount']), 2)
         if amount <= 0:
             raise web.HTTPBadRequest()
+        if amount >= 50000:
+            raise web.HTTPBadRequest(text="Voice auth required. Call BUXX.")
         merchant_data = await self._get_account_data(await self._get_auth_account(request))
 
         card_data = {}
@@ -280,7 +282,7 @@ class ShadyBucksAPIDaemon:
             ('track1' in args and len(args['track1'])) or \
             ('track2' in args and len(args['track2'])):
             card_data = await self._get_account_from_magstripe(args)
-        elif 'nfc_token' in args:
+        elif ('nfc_token' in args and len(args['nfc_token'])):
             card_data = await self._get_account_from_wristband(args)
         elif ('pan' in args and len(args['pan'])) and \
             (('otp' in args and len(args['otp'])) or ('shotp' in args and len(args['shotp']))):
@@ -319,6 +321,8 @@ class ShadyBucksAPIDaemon:
         else:
             raise web.HTTPBadRequest()
 
+        if card_data['status'] == 'blocked':
+            raise web.HTTPForbidden(text="Voice auth required. Call BUXX and ask for a Code 10 authorization.")
         if card_data['status'] != 'activated':
             raise web.HTTPForbidden()
         cust_data = await self._get_account_data(card_data['account'])
@@ -435,6 +439,8 @@ class ShadyBucksAPIDaemon:
             ('track1' in args and len(args['track1'])) or \
             ('track2' in args and len(args['track2'])):
             card_data = await self._get_account_from_magstripe(args)
+        elif ('nfc_token' in args and len(args['nfc_token'])):
+            card_data = await self._get_account_from_wristband(args)
         elif ('pan' in args and len(args['pan'])) and \
             ('otp' in args and len(args['otp'])):
             card_row = await self._psql_pool.fetchrow('SELECT * FROM cards WHERE pan = $1', args['pan'])
@@ -538,33 +544,76 @@ class ShadyBucksAPIDaemon:
         uid = await self._redis_pool.get(f'nfc_token:{nfc_token}')
         if not uid:
             raise web.HTTPUnauthorized()
+        # Don't delete the nfc_token here because it's needed for linking immediately after
+        
+        cmds = []
 
-        des_key1 = secrets.token_bytes(8).hex()
-        des_key2 = secrets.token_bytes(8).hex()
-        aes_key = secrets.token_bytes(16).hex()
-        await self._redis_pool.delete(f'nfc_token:{nfc_token}')
-        await self._psql_pool.execute('INSERT INTO nfc_keys (uid, des_key1, des_key2, aes_key) VALUES ($1, $2, $3, $4)',
-                                      uid, des_key1, des_key2, aes_key)
+        key_row = await self._psql_pool.fetchrow('SELECT * FROM nfc_keys WHERE uid = $1', uid)
+        if not key_row:
+            des_key1 = secrets.token_bytes(8).hex()
+            des_key2 = secrets.token_bytes(8).hex()
+            aes_key = secrets.token_bytes(16).hex()
+            cmds.extend([
+                f"a22c{des_key1[14:16]}{des_key1[12:14]}{des_key1[10:12]}{des_key1[8:10]}",
+                f"a22d{des_key1[6:8]}{des_key1[4:6]}{des_key1[2:4]}{des_key1[0:2]}",
+                f"a22e{des_key2[14:16]}{des_key2[12:14]}{des_key2[10:12]}{des_key2[8:10]}",
+                f"a22f{des_key2[6:8]}{des_key2[4:6]}{des_key2[2:4]}{des_key2[0:2]}",
+            ])
+            await self._psql_pool.execute('INSERT INTO nfc_keys (uid, des_key1, des_key2, aes_key) VALUES ($1, $2, $3, $4)',
+                                          uid, des_key1, des_key2, aes_key)
 
-        return web.json_response({ "cmds": [
-            "a22a27000000",
+        cmds.extend([
+            # Set max readable page without auth
+            "a22a25000000",
             "a22b00000000",
-            "a22600000000",
-            "a22700000000",
-            "a203e1101100",
-            f"a22c{des_key1[14:16]}{des_key1[12:14]}{des_key1[10:12]}{des_key1[8:10]}",
-            f"a22d{des_key1[6:8]}{des_key1[4:6]}{des_key1[2:4]}{des_key1[0:2]}",
-            f"a22e{des_key2[14:16]}{des_key2[12:14]}{des_key2[10:12]}{des_key2[8:10]}",
-            f"a22f{des_key2[6:8]}{des_key2[4:6]}{des_key2[2:4]}{des_key2[0:2]}",
-        ]})
+
+            # Write CTF flags
+            "a2246B65793D",
+            "a2257B585858",
+            "a22658585858",
+            "a2275858587D",
+
+            # Write NDEF container
+            # "a203e1101000",
+            # "a2040304d800",
+            # "a2050000fe00",
+            "a203e1101000",
+            "a2040321d101",
+            "a2051d550068",
+            "a20674747073",
+            "a2073a2f2f79",
+            "a2086f757475",
+            "a2092e62652f",
+            "a20a64517734",
+            "a20b77395767",
+            "a20c586351fe",
+            "a20d00000000",
+
+            # Write CTF hint
+            "a21800000068",
+            "a21974747073",
+            "a21a3A2F2F65",
+            "a21b7570686F",
+            "a21c7269612D",
+            "a21d6374662E",
+            "a21e636F6D2F",
+            "a21f7B777231",
+            "a22073746234",
+            "a2216E645F61",
+            "a22263633373",
+            "a223737D2F3F",
+        ])
+        return web.json_response({ "cmds": cmds })
 
     async def post_nfc_link(self, request):
         args = await request.post()
         card_data = await self._get_account_from_magstripe(args)
-        nfc_data = await self._get_account_from_wristband(args)
+        nfc_token = args['nfc_token']
+        uid = await self._redis_pool.get(f'nfc_token:{nfc_token}')
+        await self._redis_pool.delete(f'nfc_token:{nfc_token}')
 
-        await self._psql_pool.execute('INSERT INTO cards (pan, account_id, expires, card_status) VALUES ($1, $2, $3, $4, $5)',
-                                      nfc_data['card']['pan'], card_data['account'], '0000', card_data['status'])
+        await self._psql_pool.execute('INSERT INTO cards (pan, account_id, name, expires, status) VALUES ($1, $2, $3, $4, $5)',
+                                      uid, card_data['account'], card_data['card']['name'], '0000', card_data['status'])
         return web.Response(status=204)
 
     async def post_activate(self, request):

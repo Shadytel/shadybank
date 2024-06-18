@@ -3,8 +3,12 @@ var uid;
 var chal;
 var tagAuthState;
 var nfc_token;
-var activate_wristband = true;
+activate_wristband = false;
 
+window.ontag = function () {}
+window.onactivatesuccess = function () {}
+window.onactivatefail = function () {}
+window.nfcerror = function (msg) {}
 
 async function handleAppMsg(event) {
   console.log(event.data);
@@ -38,21 +42,36 @@ async function handleAppMsg(event) {
       });
       resp = await req.json();
       nfc_token = resp.nfc_token;
+      window.ontag();
 
       if (activate_wristband) {
         data = new FormData();
         data.append("nfc_token", nfc_token);
         req = await fetch("/api/nfc_activate", {
           method: "POST",
-          body: data
+          body: data,
+          headers: {
+            "Authorization": "Bearer " + document.getElementById("auth_token").value
+          }
         });
         resp = await req.json();
         resp.msg = "tagBulkSend";
+        tagAuthState = 3;
         appPort.postMessage(JSON.stringify(resp));
       }
+    } 
+  } else if (msg.msg == "tagBulkSendResp") {
+    for (let i = 0; i < msg.resps.length; i++) {
+      if (msg.resps[i] != '0a') {
+        window.onactivatefail("Got response " + msg.resps[i] + " to message " + i);
+        break;
+      }
     }
+    window.onactivatesuccess();
+  } else if (msg.msg == "exception") {
+    window.nfcerror(msg.str);
   } else {
-    console.log(msg);
+    console.log(JSON.stringify(msg));
   }
 }
 
