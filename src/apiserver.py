@@ -352,7 +352,7 @@ class ShadyBucksAPIDaemon:
                     merchant_data['id'], args['auth_code'])
                 if not auth_row:
                     raise web.HTTPNotFound()
-                if amount > auth_row['authorized_debit_amount']:
+                if amount > float(auth_row['authorized_debit_amount']):
                     raise web.HTTPForbidden()
                 await con.execute('UPDATE authorizations set status = \'posted\' WHERE id = $1', auth_row['id']);
                 await con.execute('UPDATE accounts SET balance = balance - $1, ' \
