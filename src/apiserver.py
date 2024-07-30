@@ -125,12 +125,12 @@ class ShadyBucksAPIDaemon:
         if 'pan' in args:
             auth_rows = await self._psql_pool.fetch('SELECT s.account_id, s.id, s.type, s.secret ' \
                 'FROM cards c, secrets s where c.pan = $1 AND s.account_id = c.account_id', args['pan'])
-            if len(args['otp']):
+            if ('otp' in args and len(args['otp'])):
                 await self._check_otp_ratelimit(args['pan'])
         elif 'account_id' in args:
             auth_rows = await self._psql_pool.fetch('SELECT s.account_id, s.id, s.type, s.secret ' \
                 'FROM secrets s where s.account_id = $1', int(args['account_id']))
-            if len(args['otp']):
+            if ('otp' in args and len(args['otp'])):
                 await self._check_otp_ratelimit(args['account_id'])
         else:
             raise web.HTTPBadRequest()
@@ -208,7 +208,7 @@ class ShadyBucksAPIDaemon:
         authorizations = []
         for authorization in authorization_rows:
             if authorization['debit_account'] == acct:
-                authorization.append({ 'timestamp': str(authorization['timestamp']), 'expires': str(authorization['expires']),
+                authorizations.append({ 'timestamp': str(authorization['timestamp']), 'expires': str(authorization['expires']),
                     'authorized_debit_amount': float(authorization['authorized_debit_amount']),
                     'type': 'debit', 'counterparty': authorization['cname'], 
                     'auth_code': authorization['auth_code'] })
