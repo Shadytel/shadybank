@@ -240,7 +240,7 @@ class ShadyBucksAPIDaemon:
             raise web.HTTPNotFound()
         if card_data['track'] == 1 and card_data['dd1'] == card_row['dd1']:
             return { 'account': card_row['account_id'], 'status': card_row['status'], 'card': card_data }
-        elif card_data['track'] == 2 and card_data['dd2'] == card_row['dd2']:
+        elif card_data['track'] == 2 and card_data['dd2'] == str(card_row['dd2']):
             return { 'account': card_row['account_id'], 'status': card_row['status'], 'card': card_data }
         else:
             raise web.HTTPNotFound()
