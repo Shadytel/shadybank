@@ -441,8 +441,7 @@ class ShadyBucksAPIDaemon:
             card_data = await self._get_account_from_magstripe(args)
         elif ('nfc_token' in args and len(args['nfc_token'])):
             card_data = await self._get_account_from_wristband(args)
-        elif ('pan' in args and len(args['pan'])) and \
-            ('otp' in args and len(args['otp'])):
+        elif ('pan' in args and len(args['pan'])):
             card_row = await self._psql_pool.fetchrow('SELECT * FROM cards WHERE pan = $1', args['pan'])
             if not card_row:
                 raise web.HTTPNotFound()
