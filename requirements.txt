@@ -21,3 +21,4 @@ pyotp==2.6.0
 typing-extensions==4.2.0
 yarl==1.8.2
 pycryptodome==3.20.0
+python3-saml==1.16.0

@@ -1,0 +1,28 @@
+{
+    "strict": true,
+    "debug": false,
+    "sp": {
+        "entityId": "https://bucks.shady.tel/saml/metadata",
+        "assertionConsumerService": {
+            "url": "https://bucks.shady.tel/saml/acs",
+            "binding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
+        },
+        "singleLogoutService": {
+            "url": "https://bucks.shady.tel/saml/sls",
+            "binding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+        },
+        "NameIDFormat": "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent"
+    },
+    "idp": {
+        "entityId": "https://bucks.shady.tel/saml/metadata",
+        "singleSignOnService": {
+            "url": "https://identity.shady.tel/saml/sso",
+            "binding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+        },
+        "singleLogoutService": {
+            "url": "https://identity.shady.tel/saml/slo",
+            "binding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+        },
+        "x509cert": "PLACEHOLDER_REPLACE_AT_DEPLOY_OR_SET_SAML_IDP_X509CERT"
+    }
+}

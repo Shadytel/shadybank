@@ -7,6 +7,7 @@ import asyncio
 import asyncpg
 import base64
 import hashlib
+import json
 from passlib.hash import argon2
 import pyotp
 import os
@@ -16,6 +17,9 @@ from Crypto.Cipher import DES3
 from Crypto.Random import get_random_bytes
 from datetime import datetime
 from datetime import timedelta
+from onelogin.saml2.auth import OneLogin_Saml2_Auth
+
+from saml_support import SAML_SESSION_TTL, load_saml_settings, prepare_saml_request, saml_attribute_name
 
 track1_re = re.compile(r'(?a)%B(?P<pan>\d{8,19})\^(?P<name>.*)\^(?P<exp>\d{4})(?P<svc>\d{3})(?P<dd1>.*?)\?')
 track2_re = re.compile(r'(?a);(?P<pan>\d{8,19})=(?P<exp>\d{4})(?P<svc>\d{3})(?P<dd2>.*?)\?')
@@ -73,6 +77,14 @@ class ShadyBucksAPIDaemon:
         # Admin APIs
         self._app.add_routes([web.post('/api/activate', self.post_activate)])
 
+        # SAML SP
+        self._saml_settings = load_saml_settings()
+        self._app.add_routes([web.post('/api/saml/acs', self.post_saml_acs)])
+        #self._app.add_routes([web.get('/api/saml/accts', self.get_saml_accts)])
+        #self._app.add_routes([web.post('/api/saml/select_acct', self.post_saml_select_acct)])
+        #self._app.add_routes([web.post('/api/saml/new_acct', self.post_saml_new_acct)])
+        #self._app.add_routes([web.post('/api/saml/bind_acct', self.post_saml_bind_acct)])
+
     async def _init_db_pool(self):
         self._psql_pool = await asyncpg.create_pool(database='shadybucks')
         self._redis_pool = aioredis.from_url("redis://redis", decode_responses=True)
@@ -80,6 +92,57 @@ class ShadyBucksAPIDaemon:
     def run(self, path):
         asyncio.get_event_loop().run_until_complete(self._init_db_pool())
         web.run_app(self._app, path=path)
+
+    async def _upsert_saml_customer(self, shadytel_customer_id, name):
+        row = await self._psql_pool.fetchrow(
+            'SELECT id, name FROM customers WHERE shadytel_customer_id = $1',
+            shadytel_customer_id)
+        if row:
+            if name and name != row['name']:
+                await self._psql_pool.execute(
+                    'UPDATE customers SET name = $2, last_updated = NOW() WHERE id = $1',
+                    row['id'], name)
+                return row['id'], name
+            return row['id'], row['name']
+        row = await self._psql_pool.fetchrow(
+            'INSERT INTO customers (shadytel_customer_id, name) VALUES ($1, $2) RETURNING id',
+            shadytel_customer_id, name or 'Shadytel Customer %d' % shadytel_customer_id)
+        return row['id']
+
+    async def post_saml_acs(self, request):
+        post_data = await request.post()
+        req = prepare_saml_request(request, post_data)
+        auth = OneLogin_Saml2_Auth(req, self._saml_settings)
+        await auth.process_response()
+
+        errors = auth.get_errors()
+        if errors:
+            reason = auth.get_last_error_reason() or ''
+            raise web.HTTPBadRequest(text='SAML error: %s %s' % (', '.join(errors), reason))
+
+        if not auth.is_authenticated():
+            raise web.HTTPUnauthorized(text='SAML authentication failed')
+
+        try:
+            shadytel_customer_id = int(auth.get_nameid())
+        except (TypeError, ValueError):
+            raise web.HTTPBadRequest(text='SAML NameID must be a numeric shadytel_customer_id')
+
+        name = saml_attribute_name(auth)
+        customer_id, customer_name = await self._upsert_saml_customer(shadytel_customer_id, name)
+
+        saml_token = secrets.token_urlsafe()
+        await self._redis_pool.setex(
+            'saml_token:%s' % saml_token,
+            SAML_SESSION_TTL,
+            json.dumps({
+                'customer_id': customer_id,
+                'shadytel_customer_id': shadytel_customer_id,
+                'name': customer_name,
+            }))
+
+        resp = web.Response(status=201, text=saml_token)
+        return resp
 
     async def handle_login_success(self, request, auth_row):
         auth_token = secrets.token_urlsafe()
