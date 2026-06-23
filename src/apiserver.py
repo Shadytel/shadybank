@@ -92,6 +92,12 @@ class ShadyBucksAPIDaemon:
     def run(self, path):
         asyncio.get_event_loop().run_until_complete(self._init_db_pool())
         web.run_app(self._app, path=path)
+        
+    async def handle_login_success(self, request, auth_row):
+        auth_token = secrets.token_urlsafe()
+        await self._psql_pool.execute('UPDATE secrets SET last_used = NOW() where id = $1', auth_row['id'])
+        await self._redis_pool.setex('auth_token:{}'.format(auth_token), 2592000, auth_row['account_id'])
+        return web.Response(status=201, text=auth_token)
 
     async def _upsert_saml_customer(self, shadytel_customer_id, name):
         row = await self._psql_pool.fetchrow(
@@ -191,7 +197,6 @@ class ShadyBucksAPIDaemon:
         customer_id = await self._get_saml_customer(request)
         args = await request.post()
         accts = (await self._psql_pool.fetchrow('SELECT COUNT(*) FROM accounts WHERE customer_id = $1', customer_id))[0]
-        print(accts)
         if accts:
             raise web.HTTPUnauthorized(text="You already have an existing Shadybucks account. Please contact BUXX for additional accounts.")
         new_acct_id = (await self._psql_pool.fetchrow('INSERT INTO accounts (customer_id, name) VALUES ($1, $2) RETURNING id', customer_id, args['name']))[0]
@@ -208,7 +213,7 @@ class ShadyBucksAPIDaemon:
     async def post_saml_bind_acct(self, request):
         auth_response = await self.post_login(request)
         if auth_response.status == 201:
-            auth_token = await auth_response.text()
+            auth_token = auth_response.text
             acct_id = await self._redis_pool.get('auth_token:{}'.format(auth_token))
             customer_id = await self._get_saml_customer(request)
             await self._psql_pool.execute('UPDATE accounts SET customer_id = $2 WHERE id = $1', int(acct_id), customer_id)
@@ -230,7 +235,7 @@ class ShadyBucksAPIDaemon:
         val = await self._redis_pool.incr(key)
         await self._redis_pool.expire(key, expiration_in_secs)
         if val > limit:
-            raise web.HTTPUnauthorized()
+            raise web.HTTPUnauthorized(text="Rate limit exceeded")
         
     async def _check_otp_ratelimit(self, pan):
         key = 'otp:{}'.format(pan)
