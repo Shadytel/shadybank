@@ -102,8 +102,8 @@ class ShadyBucksAPIDaemon:
                 await self._psql_pool.execute(
                     'UPDATE customers SET name = $2, last_updated = NOW() WHERE id = $1',
                     row['id'], name)
-                return row['id'], name
-            return row['id'], row['name']
+                return row['id']
+            return row['id']
         row = await self._psql_pool.fetchrow(
             'INSERT INTO customers (shadytel_customer_id, name) VALUES ($1, $2) RETURNING id',
             shadytel_customer_id, name or 'Shadytel Customer %d' % shadytel_customer_id)
@@ -153,8 +153,8 @@ class ShadyBucksAPIDaemon:
 
     async def get_saml_accts(self, request):
         customer_id = await self._get_saml_customer(request)
-        accts = await self._psql_pool.fetch('SELECT id, name FROM accounts WHERE customer_id = $1', customer_id)
-        return web.json_response(accts)
+        accts = await self._psql_pool.fetch('SELECT id, name FROM accounts WHERE customer_id = $1', int(customer_id))
+        return web.json_response([dict(acct) for acct in accts])
 
     async def post_saml_select_acct(self, request):
         customer_id = await self._get_saml_customer(request)
@@ -167,7 +167,7 @@ class ShadyBucksAPIDaemon:
             return web.Response(status=201, text=auth_token)
         raise web.HTTPUnauthorized()
 
-    def _append_luhn_check_digit(payload):
+    def _append_luhn_check_digit(self, payload):
         """Computes and appends the missing Luhn check digit for a given payload string."""
         # Reverse payload because Luhn operates from right to left
         digits = [int(d) for d in reversed(payload)]
@@ -190,16 +190,17 @@ class ShadyBucksAPIDaemon:
     async def post_saml_new_acct(self, request):
         customer_id = await self._get_saml_customer(request)
         args = await request.post()
-        accts = (await self._psql_pool.fetch('SELECT COUNT(*) FROM accounts WHERE customer_id = $1', customer_id))[0]
+        accts = (await self._psql_pool.fetchrow('SELECT COUNT(*) FROM accounts WHERE customer_id = $1', customer_id))[0]
+        print(accts)
         if accts:
             raise web.HTTPUnauthorized(text="You already have an existing Shadybucks account. Please contact BUXX for additional accounts.")
-        new_acct_id = (await self._psql_pool.fetch('INSERT INTO accounts (customer_id, name) VALUES ($1, $2) RETURNING id', customer_id, args['name']))[0]
-        new_totp_secret = base64.b32encode(secrets.token_bytes(20))
+        new_acct_id = (await self._psql_pool.fetchrow('INSERT INTO accounts (customer_id, name) VALUES ($1, $2) RETURNING id', customer_id, args['name']))[0]
+        new_totp_secret = base64.b32encode(secrets.token_bytes(20)).decode('utf-8')
         await self._psql_pool.execute('INSERT INTO secrets (account_id, type, secret) VALUES ($1, \'totp\', $2)', new_acct_id, new_totp_secret)
-        new_acct_pan = _append_luhn_check_digit(f'899798667{new_acct_id:06d}')
-        dd1 = base64.b32encode(secrets.token_bytes(5))
+        new_acct_pan = self._append_luhn_check_digit(f'899798667{new_acct_id:06d}')
+        dd1 = base64.b32encode(secrets.token_bytes(5)).decode('utf-8')
         dd2 = f'{secrets.randbelow(100000000):08d}'
-        await self._psql_pool.execute('INSERT INTO cards (account_id, name, expires, status, dd1, dd2) VALUES ($1, $2, $3, $4, $5, $6)', new_acct_pan, args['name'], '3801', 'activated', dd1, dd2)
+        await self._psql_pool.execute('INSERT INTO cards (pan, account_id, name, expires, status, dd1, dd2) VALUES ($1, $2, $3, $4, $5, $6, $7)', new_acct_pan, new_acct_id, args['name'], '3801', 'activated', dd1, dd2)
         auth_token = secrets.token_urlsafe()
         await self._redis_pool.setex('auth_token:{}'.format(auth_token), 2592000, new_acct_id)
         return web.Response(status=201, text=json.dumps({ 'pan': new_acct_pan, 'totp_secret': new_totp_secret, 'auth_token': auth_token }))
