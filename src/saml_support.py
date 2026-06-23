@@ -6,16 +6,15 @@ SAML_SESSION_TTL = 3600
 
 
 def load_saml_settings():
-    sp_base = os.environ.get('SAML_SP_BASE_URL', 'http://localhost:8021').rstrip('/')
+    sp_base = os.environ.get('SAML_SP_BASE_URL', 'https://bucks.shady.tel').rstrip('/')
     with open(os.path.join(SAML_DIR, 'settings.json')) as f:
         settings = json.load(f)
     with open(os.path.join(SAML_DIR, 'advanced_settings.json')) as f:
         advanced = json.load(f)
     settings.update(advanced)
 
-    settings['sp']['entityId'] = sp_base + '/saml/metadata'
-    settings['sp']['assertionConsumerService']['url'] = sp_base + '/saml/acs'
-    settings['sp']['singleLogoutService']['url'] = sp_base + '/saml/sls'
+    settings['sp']['entityId'] = sp_base
+    settings['sp']['assertionConsumerService']['url'] = sp_base + '/api/saml/acs'
 
     idp_entity = os.environ.get('SAML_IDP_ENTITY_ID')
     if idp_entity:
@@ -36,9 +35,10 @@ def load_saml_settings():
 
 
 def prepare_saml_request(request, post_data=None):
-    https = 'on' if request.scheme == 'https' else 'off'
-    if request.headers.get('X-Forwarded-Proto', '').split(',')[0].strip() == 'https':
-        https = 'on'
+    #https = 'on' if request.scheme == 'https' else 'off'
+    #if request.headers.get('X-Forwarded-Proto', '').split(',')[0].strip() == 'https':
+    #    https = 'on'
+    https = 'on'
 
     host = request.headers.get('X-Forwarded-Host', request.host)
     if ',' in host:
@@ -46,8 +46,9 @@ def prepare_saml_request(request, post_data=None):
 
     http_host = host.rsplit(':', 1)[0] if ':' in host else host
     server_port = request.url.port
-    if server_port is None:
-        server_port = 443 if https == 'on' else 80
+    #if server_port is None:
+    #    server_port = 443 if https == 'on' else 80
+    server_port = 443
 
     prepared = {
         'https': https,

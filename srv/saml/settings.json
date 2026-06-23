@@ -7,22 +7,14 @@
             "url": "https://bucks.shady.tel/saml/acs",
             "binding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
         },
-        "singleLogoutService": {
-            "url": "https://bucks.shady.tel/saml/sls",
-            "binding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
-        },
         "NameIDFormat": "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent"
     },
     "idp": {
-        "entityId": "https://bucks.shady.tel/saml/metadata",
+        "entityId": "https://identity.shady.tel/application/saml/shadybucks/metadata/",
         "singleSignOnService": {
             "url": "https://identity.shady.tel/saml/sso",
             "binding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
         },
-        "singleLogoutService": {
-            "url": "https://identity.shady.tel/saml/slo",
-            "binding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
-        },
-        "x509cert": "PLACEHOLDER_REPLACE_AT_DEPLOY_OR_SET_SAML_IDP_X509CERT"
+        "x509cert": "MIIBdzCCAR2gAwIBAgIQWHR6XVVMS2C8JufH+DUCmTAKBggqhkjOPQQDAjAeMRwwGgYDVQQDDBNhdXRoZW50aWsgMjAyNS4xMC4yMCAXDTI1MTIxMDA1MTAwOFoYDzIxMjUxMTE3MDUxMDA4WjBbMS8wLQYDVQQDDCZpZGVudGl0eS5zaGFkeS50ZWwgaWRlbnRpdHkgc2lnbmluZyBFQzESMBAGA1UECgwJYXV0aGVudGlrMRQwEgYDVQQLDAtTZWxmLXNpZ25lZDBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABAeUjhKzTiaZTn/Q4FW57SaHQnQxn4VC8Tt3QZDZBoEwVXES4vfryTMUxBHvZn/X7eb9R56G5WTv/ih4Vb6dGqYwCgYIKoZIzj0EAwIDSAAwRQIhAKJnaR8XrWy8Ec/6vWftYUcDZrwOPHj7/BOEVhqRlzS0AiB3/2jl7sbohq0vNHDTrmNFGfhNFRhcltm1mmQ129ujcA=="
     }
 }

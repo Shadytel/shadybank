@@ -113,7 +113,7 @@ class ShadyBucksAPIDaemon:
         post_data = await request.post()
         req = prepare_saml_request(request, post_data)
         auth = OneLogin_Saml2_Auth(req, self._saml_settings)
-        await auth.process_response()
+        auth.process_response()
 
         errors = auth.get_errors()
         if errors:
@@ -129,7 +129,7 @@ class ShadyBucksAPIDaemon:
             raise web.HTTPBadRequest(text='SAML NameID must be a numeric shadytel_customer_id')
 
         name = saml_attribute_name(auth)
-        customer_id, customer_name = await self._upsert_saml_customer(shadytel_customer_id, name)
+        customer_id = await self._upsert_saml_customer(shadytel_customer_id, name)
 
         saml_token = secrets.token_urlsafe()
         await self._redis_pool.setex(
@@ -138,7 +138,7 @@ class ShadyBucksAPIDaemon:
             json.dumps({
                 'customer_id': customer_id,
                 'shadytel_customer_id': shadytel_customer_id,
-                'name': customer_name,
+                'name': name,
             }))
 
         resp = web.Response(status=201, text=saml_token)
