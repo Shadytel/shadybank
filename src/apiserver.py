@@ -80,10 +80,10 @@ class ShadyBucksAPIDaemon:
         # SAML SP
         self._saml_settings = load_saml_settings()
         self._app.add_routes([web.post('/api/saml/acs', self.post_saml_acs)])
-        #self._app.add_routes([web.get('/api/saml/accts', self.get_saml_accts)])
-        #self._app.add_routes([web.post('/api/saml/select_acct', self.post_saml_select_acct)])
-        #self._app.add_routes([web.post('/api/saml/new_acct', self.post_saml_new_acct)])
-        #self._app.add_routes([web.post('/api/saml/bind_acct', self.post_saml_bind_acct)])
+        self._app.add_routes([web.get('/api/saml/accts', self.get_saml_accts)])
+        self._app.add_routes([web.post('/api/saml/select_acct', self.post_saml_select_acct)])
+        self._app.add_routes([web.post('/api/saml/new_acct', self.post_saml_new_acct)])
+        self._app.add_routes([web.post('/api/saml/bind_acct', self.post_saml_bind_acct)])
 
     async def _init_db_pool(self):
         self._psql_pool = await asyncpg.create_pool(database='shadybucks')
@@ -144,12 +144,75 @@ class ShadyBucksAPIDaemon:
         resp = web.Response(status=201, text=saml_token)
         return resp
 
-    async def handle_login_success(self, request, auth_row):
+    async def _get_saml_customer(self, request):
+        saml_token = self._get_request_auth_token(request)
+        saml_session = await self._redis_pool.get('saml_token:{}'.format(saml_token))
+        if saml_session:
+            return json.loads(saml_session)['customer_id']
+        raise web.HTTPUnauthorized()
+
+    async def get_saml_accts(self, request):
+        customer_id = await self._get_saml_customer(request)
+        accts = await self._psql_pool.fetch('SELECT id, name FROM accounts WHERE customer_id = $1', customer_id)
+        return web.json_response(accts)
+
+    async def post_saml_select_acct(self, request):
+        customer_id = await self._get_saml_customer(request)
+        args = await request.post()
+        acct_id = int(args['acct_id'])
+        acct = await self._psql_pool.fetch('SELECT * FROM accounts WHERE customer_id = $1 AND id = $2', customer_id, acct_id)
+        if acct:
+            auth_token = secrets.token_urlsafe()
+            await self._redis_pool.setex('auth_token:{}'.format(auth_token), 2592000, acct_id)
+            return web.Response(status=201, text=auth_token)
+        raise web.HTTPUnauthorized()
+
+    def _append_luhn_check_digit(payload):
+        """Computes and appends the missing Luhn check digit for a given payload string."""
+        # Reverse payload because Luhn operates from right to left
+        digits = [int(d) for d in reversed(payload)]
+        
+        total_sum = 0
+        for i, digit in enumerate(digits):
+            # Since the check digit will be at index 0 of the final number,
+            # the payload's rightmost digit becomes the first doubled digit (index 0 here)
+            if i % 2 == 0:
+                doubled = digit * 2
+                # Subtract 9 if the doubled number is greater than 9
+                total_sum += doubled if doubled < 10 else doubled - 9
+            else:
+                total_sum += digit
+                
+        # Calculate the digit needed to make the total sum a multiple of 10
+        luhn_check_digit = (10 - (total_sum % 10)) % 10
+        return payload + str(luhn_check_digit)
+
+    async def post_saml_new_acct(self, request):
+        customer_id = await self._get_saml_customer(request)
+        args = await request.post()
+        accts = (await self._psql_pool.fetch('SELECT COUNT(*) FROM accounts WHERE customer_id = $1', customer_id))[0]
+        if accts:
+            raise web.HTTPUnauthorized(text="You already have an existing Shadybucks account. Please contact BUXX for additional accounts.")
+        new_acct_id = (await self._psql_pool.fetch('INSERT INTO accounts (customer_id, name) VALUES ($1, $2) RETURNING id', customer_id, args['name']))[0]
+        new_totp_secret = base64.b32encode(secrets.token_bytes(20))
+        await self._psql_pool.execute('INSERT INTO secrets (account_id, type, secret) VALUES ($1, \'totp\', $2)', new_acct_id, new_totp_secret)
+        new_acct_pan = _append_luhn_check_digit(f'899798667{new_acct_id:06d}')
+        dd1 = base64.b32encode(secrets.token_bytes(5))
+        dd2 = f'{secrets.randbelow(100000000):08d}'
+        await self._psql_pool.execute('INSERT INTO cards (account_id, name, expires, status, dd1, dd2) VALUES ($1, $2, $3, $4, $5, $6)', new_acct_pan, args['name'], '3801', 'activated', dd1, dd2)
         auth_token = secrets.token_urlsafe()
-        await self._psql_pool.execute('UPDATE secrets SET last_used = NOW() where id = $1', auth_row['id'])
-        await self._redis_pool.setex('auth_token:{}'.format(auth_token), 2592000, auth_row['account_id'])
-        resp = web.Response(status=201, text=auth_token)
-        return resp
+        await self._redis_pool.setex('auth_token:{}'.format(auth_token), 2592000, new_acct_id)
+        return web.Response(status=201, text=json.dumps({ 'pan': new_acct_pan, 'totp_secret': new_totp_secret, 'auth_token': auth_token }))
+
+    async def post_saml_bind_acct(self, request):
+        auth_response = await self.post_login(request)
+        if auth_response.status == 201:
+            auth_token = await auth_response.text()
+            acct_id = await self._redis_pool.get('auth_token:{}'.format(auth_token))
+            customer_id = await self._get_saml_customer(request)
+            await self._psql_pool.execute('UPDATE accounts SET customer_id = $2 WHERE id = $1', int(acct_id), customer_id)
+            return auth_response
+        raise web.HTTPUnauthorized()
 
     def _get_request_auth_token(self, request):
         if not 'Authorization' in request.headers:
