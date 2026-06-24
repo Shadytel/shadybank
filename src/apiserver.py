@@ -208,7 +208,7 @@ class ShadyBucksAPIDaemon:
         await self._psql_pool.execute('INSERT INTO cards (pan, account_id, name, expires, status, dd1, dd2) VALUES ($1, $2, $3, $4, $5, $6, $7)', new_acct_pan, new_acct_id, args['name'], '3801', 'activated', dd1, dd2)
         auth_token = secrets.token_urlsafe()
         await self._redis_pool.setex('auth_token:{}'.format(auth_token), 2592000, new_acct_id)
-        return web.Response(status=201, text=json.dumps({ 'pan': new_acct_pan, 'totp_secret': new_totp_secret, 'auth_token': auth_token }))
+        return web.json_response({ 'pan': new_acct_pan, 'totp_secret': new_totp_secret, 'auth_token': auth_token }, status=201)
 
     async def post_saml_bind_acct(self, request):
         auth_response = await self.post_login(request)

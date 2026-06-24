@@ -35,26 +35,11 @@ def load_saml_settings():
 
 
 def prepare_saml_request(request, post_data=None):
-    #https = 'on' if request.scheme == 'https' else 'off'
-    #if request.headers.get('X-Forwarded-Proto', '').split(',')[0].strip() == 'https':
-    #    https = 'on'
-    https = 'on'
-
-    host = request.headers.get('X-Forwarded-Host', request.host)
-    if ',' in host:
-        host = host.split(',')[0].strip()
-
-    http_host = host.rsplit(':', 1)[0] if ':' in host else host
-    server_port = request.url.port
-    #if server_port is None:
-    #    server_port = 443 if https == 'on' else 80
-    server_port = 443
-
     prepared = {
-        'https': https,
-        'http_host': http_host,
-        'script_name': request.path,
-        'server_port': server_port,
+        'https': True,
+        'http_host': 'bucks.shady.tel',
+        'script_name': '/app/saml/acs',
+        'server_port': 443,
         'get_data': dict(request.query),
         'post_data': {},
     }
