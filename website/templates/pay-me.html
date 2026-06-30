@@ -1,0 +1,42 @@
+{% extends "site.html" %}
+{% block title %}Shadybucks: Pay Me{% endblock title %}
+{% block headline %}Shadybucks: Pay Me{% endblock headline %}
+{% block scripts %}
+<script src="/static/qrcode.min.js"></script>
+<script>
+  function generatePayMeQR() {
+    var pan = "{{ account_pan|default('', true) }}";
+    var amount = document.getElementById("qr_amount").value.trim();
+    var qrEl = document.getElementById("payme_qr");
+    var linkEl = document.getElementById("payme_link");
+    if (!amount) {
+      qrEl.innerHTML = "";
+      linkEl.textContent = "Enter an amount first.";
+      return;
+    }
+    var url = window.location.origin + "/app/transact?txn_type=credit&pan=" +
+      encodeURIComponent(pan) + "&amount=" + encodeURIComponent(amount);
+    var qr = qrcode(0, "M");
+    qr.addData(url);
+    qr.make();
+    qrEl.innerHTML = '<a href="' + url + '">' + qr.createImgTag(6, 8) + "</a>";
+    linkEl.innerHTML = '<a href="' + url + '">' + url + "</a>";
+  }
+</script>
+{% endblock scripts %}
+
+{% block body %}
+<h3>Account Information</h3>
+<table>
+  <tr><td>Name</td><td>{{name}}</td></tr>
+  <tr><td>Account ID</td><td>{{account_pan}}</td></tr>
+  <tr><td>Total Balance</td><td>{{balance}}</td></tr>
+  <tr><td>Available Balance</td><td>{{available}}</td></tr>
+</table>
+<br></br>
+<table>
+  <tr><td>Amount:</td><td><input id="qr_amount" inputmode="numeric" value="{{amount}}"></td></tr>
+  <tr><td colspan="2"><button type="button" onclick="generatePayMeQR()">Generate QR Code</button></td></tr>
+</table>
+<div id="payme_qr"></div>
+{% endblock body %}

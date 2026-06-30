@@ -182,7 +182,10 @@ class ShadyBucksAPIDaemon:
     async def get_balance(self, request):
         acct = await self._get_auth_account(request)
         name, balance, available = await self._psql_pool.fetchrow('SELECT name, balance, available FROM accounts WHERE id = $1', acct);
-        return web.json_response({ 'account': acct, 'name': name, 'balance': float(balance), 'available': float(available) })
+        card_row = await self._psql_pool.fetchrow('SELECT pan FROM cards WHERE account_id = $1 ' \
+            'ORDER BY (status = \'activated\') DESC LIMIT 1', acct);
+        account_pan = card_row['pan'] if card_row else None
+        return web.json_response({ 'account': acct, 'name': name, 'balance': float(balance), 'available': float(available), 'account_pan': account_pan })
 
     async def get_transactions(self, request):
         acct = await self._get_auth_account(request)

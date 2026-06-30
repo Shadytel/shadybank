@@ -31,6 +31,7 @@ class ShadyBucksFrontEndDaemon:
         self._app.add_routes([web.post('/app/activate', self.post_activate)])
         self._app.add_routes([web.get('/app/app-login', self.get_app_login)])
         self._app.add_routes([web.get('/app/activate-wristband', self.get_activate_wristband)])
+        self._app.add_routes([web.get('/app/payme', self.get_payme)])
 
         self._app.add_routes([web.static('/static', os.path.join(os.getcwd() ,'website/static'))])
 
@@ -180,6 +181,18 @@ class ShadyBucksFrontEndDaemon:
         else:
             raise web.HTTPFound('/app/login')
         return aiohttp_jinja2.render_template('transaction-entry.html', request, context)
+    
+    
+    async def get_payme(self, request):
+        context = { 'CSRF_TOKEN': request['CSRF_TOKEN'] }    
+        auth_header = { 'Authorization': 'Bearer ' + request.auth_token }
+        balance_resp = await self._api_client_session.get('http://api-endpoint:8080/api/balance', headers=auth_header)
+        if balance_resp.status == 200:
+            balance_json = await balance_resp.json()
+            context = { **request.query, **context, **balance_json }
+        else:
+            raise web.HTTPFound('/app/login')
+        return aiohttp_jinja2.render_template('pay-me.html', request, context)
 
     async def post_transact(self, request):
         data = await request.post()

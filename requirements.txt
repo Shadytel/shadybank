@@ -5,7 +5,7 @@ aiosignal==1.2.0
 argon2-cffi==21.3.0
 argon2-cffi-bindings==21.2.0
 async-timeout==3.0.1
-asyncpg==0.25.0
+asyncpg==0.27.0
 attrs==21.4.0
 cffi==1.15.0
 chardet==3.0.4
