@@ -457,16 +457,16 @@ class ShadyBucksAPIDaemon:
             raise web.HTTPForbidden(text="Voice auth required. Call BUXX and ask for a Code 10 authorization.")
         if card_data['status'] != 'activated':
             raise web.HTTPForbidden()
-        cust_data = await self._get_account_data(card_data['account'])
-        if amount > cust_data['available']:
-            raise web.HTTPForbidden()
+        cust_id = card_data['account']
         auth_code = str(secrets.randbelow(1000000)).zfill(6)
         async with self._psql_pool.acquire() as con:
             async with con.transaction():
+                held = await con.fetchrow('UPDATE accounts SET available = available - $1, last_updated = NOW() ' \
+                    'WHERE id = $2 AND available >= $1 RETURNING id', amount, cust_id)
+                if not held:
+                    raise web.HTTPForbidden()
                 await con.execute('INSERT INTO authorizations (pan, auth_code, debit_account, credit_account, authorized_debit_amount) ' \
-                    'VALUES($1, $2, $3, $4, $5)', card_data['card']['pan'], auth_code, cust_data['id'], merchant_data['id'], amount);
-                await con.execute('UPDATE accounts SET available = available - $1, last_updated = NOW() WHERE id = $2',
-                    amount, cust_data['id'])
+                    'VALUES($1, $2, $3, $4, $5)', card_data['card']['pan'], auth_code, cust_id, merchant_data['id'], amount)
         return web.Response(text=auth_code)
 
     async def post_capture(self, request):
@@ -509,14 +509,14 @@ class ShadyBucksAPIDaemon:
         merchant_data = await self._get_account_data(await self._get_auth_account(request))
         async with self._psql_pool.acquire() as con:
             async with con.transaction():
-                auth_row = await con.fetchrow('SELECT * from authorizations WHERE credit_account = $1 ' \
-                    'AND auth_code = $2 AND status = \'pending\'',
+                released = await con.fetchrow('UPDATE authorizations SET status = \'voided\' ' \
+                    'WHERE credit_account = $1 AND auth_code = $2 AND status = \'pending\' ' \
+                    'RETURNING debit_account, authorized_debit_amount',
                     merchant_data['id'], args['auth_code'])
-                if not auth_row:
+                if not released:
                     raise web.HTTPNotFound()
-                await con.execute('UPDATE authorizations set status = \'voided\' WHERE id = $1', auth_row['id']);
                 await con.execute('UPDATE accounts SET available = available + $1, last_updated = NOW() WHERE id = $2',
-                    auth_row['authorized_debit_amount'], auth_row['debit_account'])
+                    released['authorized_debit_amount'], released['debit_account'])
         return web.Response(status=204)
 
     async def post_reverse(self, request):
@@ -561,9 +561,7 @@ class ShadyBucksAPIDaemon:
         amount = round(float(args['amount']), 2)
         if amount <= 0:
             raise web.HTTPBadRequest()
-        merchant_data = await self._get_account_data(await self._get_auth_account(request))
-        if merchant_data['available'] < amount and (not (merchant_data['partner'] or merchant_data['admin'] or merchant_data['special'])):
-            raise web.HTTPForbidden()
+        merchant_id = await self._get_auth_account(request)
 
         card_data = {}
 
@@ -581,22 +579,26 @@ class ShadyBucksAPIDaemon:
         else:
             raise web.HTTPBadRequest()
 
-        cust_data = await self._get_account_data(card_data['account'])
+        cust_id = card_data['account']
         async with self._psql_pool.acquire() as con:
             async with con.transaction():
-                await con.execute('UPDATE accounts SET balance = balance - $1, ' \
-                    'available = available - $1, last_updated = NOW() WHERE id = $2',
-                    amount, merchant_data['id'])
+                await con.fetchrow('SELECT id FROM accounts WHERE id = $1 FOR UPDATE', merchant_id)
+                debited = await con.fetchrow('UPDATE accounts SET balance = balance - $1, ' \
+                    'available = available - $1, last_updated = NOW() WHERE id = $2 AND ' \
+                    '(partner OR admin OR special OR available >= $1) RETURNING id',
+                    amount, merchant_id)
+                if not debited:
+                    raise web.HTTPForbidden()
                 await con.execute('UPDATE accounts SET balance = balance + $1, ' \
                     'available = available + $1, last_updated = NOW() WHERE id = $2',
-                    amount, cust_data['id'])
+                    amount, cust_id)
                 if 'description' in args:
                     description = args['description']
                 else:
                     description = None
                 await con.execute('INSERT INTO transactions (debit_account, credit_account, amount, pan, ' \
-                    'type, description) VALUES($1, $2, $3, $4, $5, $6)', merchant_data['id'],
-                    cust_data['id'], amount, card_data['card']['pan'], "credit_points", description)
+                    'type, description) VALUES($1, $2, $3, $4, $5, $6)', merchant_id,
+                    cust_id, amount, card_data['card']['pan'], "credit_points", description)
         return web.Response(status=204)
 
     async def post_nfc_challenge(self, request):
@@ -699,16 +701,15 @@ class ShadyBucksAPIDaemon:
             "a22b00000000",
 
             # Write CTF flags
-            "a2246B65793D",
-            "a2257B585858",
-            "a22658585858",
-            "a2275858587D",
+            # "a2246B65793D",
+            # "a2257B585858",
+            # "a22658585858",
+            # "a2275858587D",
 
             # Write NDEF container
             # "a203e1101000",
             # "a2040304d800",
             # "a2050000fe00",
-            "a203e1101000",
             "a2040321d101",
             "a2051d550068",
             "a20674747073",
@@ -720,31 +721,53 @@ class ShadyBucksAPIDaemon:
             "a20c586351fe",
             "a20d00000000",
 
+            # OTP (may fail)
+            "a203e1101200",
+
             # Write CTF hint
-            "a21800000068",
-            "a21974747073",
-            "a21a3A2F2F65",
-            "a21b7570686F",
-            "a21c7269612D",
-            "a21d6374662E",
-            "a21e636F6D2F",
-            "a21f7B777231",
-            "a22073746234",
-            "a2216E645F61",
-            "a22263633373",
-            "a223737D2F3F",
+            # "a21800000068",
+            # "a21974747073",
+            # "a21a3A2F2F65",
+            # "a21b7570686F",
+            # "a21c7269612D",
+            # "a21d6374662E",
+            # "a21e636F6D2F",
+            # "a21f7B777231",
+            # "a22073746234",
+            # "a2216E645F61",
+            # "a22263633373",
+            # "a223737D2F3F",
         ])
         return web.json_response({ "cmds": cmds })
 
     async def post_nfc_link(self, request):
         args = await request.post()
-        card_data = await self._get_account_from_magstripe(args)
+        auth_response = await self.post_login(request)
+        if auth_response.status == 201:
+            auth_token = auth_response.text
+            acct_id = await self._redis_pool.get('auth_token:{}'.format(auth_token))
+
         nfc_token = args['nfc_token']
         uid = await self._redis_pool.get(f'nfc_token:{nfc_token}')
         await self._redis_pool.delete(f'nfc_token:{nfc_token}')
 
-        await self._psql_pool.execute('INSERT INTO cards (pan, account_id, name, expires, status) VALUES ($1, $2, $3, $4, $5)',
-                                      uid, card_data['account'], card_data['card']['name'], '0000', card_data['status'])
+        # amount = 500.00
+
+        # async with self._psql_pool.acquire() as con:
+        #     async with con.transaction():
+        #         await con.execute('INSERT INTO cards (pan, account_id, name, expires, status) VALUES ($1, $2, $3, $4, $5)',
+        #                               uid, acct_id, 'SHADYBUCKS CUSTOMER', '0000', 'activated')
+        #         await con.execute('UPDATE accounts SET balance = balance - $1, ' \
+        #             'available = available - $1, last_updated = NOW() WHERE id = $2',
+        #             amount, 1)
+        #         await con.execute('UPDATE accounts SET balance = balance + $1, ' \
+        #             'available = available + $1, last_updated = NOW() WHERE id = $2',
+        #             amount, acct_id)
+        #         description = 'TOORCAMP 2026 WELCOME BONUS'
+        #         await con.execute('INSERT INTO transactions (debit_account, credit_account, amount, pan, ' \
+        #             'type, description) VALUES($1, $2, $3, $4, $5, $6)', 1,
+        #             acct_id, amount, uid, "credit_points", description)
+
         return web.Response(status=204)
 
     async def post_activate(self, request):
