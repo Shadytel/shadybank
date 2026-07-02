@@ -71,6 +71,7 @@ class ShadyBucksFrontEndDaemon:
         csrf_token = form_data['CSRF_TOKEN']
         # This should be a .getdel but aioredis doesn't support that yet
         expected_sid = await self._redis_pool.get('csrf:{}'.format(csrf_token))
+        await self._redis_pool.delete('csrf:{}'.format(csrf_token))
         if expected_sid != request['SID']:
             raise web.HTTPBadRequest()
 
@@ -163,7 +164,7 @@ class ShadyBucksFrontEndDaemon:
         if saml_resp.status == 201:
             auth_token = await saml_resp.text()
             await self._redis_pool.setex('sid:{}:saml'.format(request['SID']), 2592000, auth_token)
-            raise web.HTTPFound('/app/saml-login')
+            return await self.get_saml_login(request)
 
     async def get_account(self, request):
         context = { 'CSRF_TOKEN': request['CSRF_TOKEN'] }
