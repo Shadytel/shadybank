@@ -7,6 +7,7 @@ import asyncio
 import asyncpg
 import base64
 import hashlib
+import json
 from passlib.hash import argon2
 import pyotp
 import os
@@ -16,6 +17,9 @@ from Crypto.Cipher import DES3
 from Crypto.Random import get_random_bytes
 from datetime import datetime
 from datetime import timedelta
+from onelogin.saml2.auth import OneLogin_Saml2_Auth
+
+from saml_support import SAML_SESSION_TTL, load_saml_settings, prepare_saml_request, saml_attribute_name
 
 track1_re = re.compile(r'(?a)%B(?P<pan>\d{8,19})\^(?P<name>.*)\^(?P<exp>\d{4})(?P<svc>\d{3})(?P<dd1>.*?)\?')
 track2_re = re.compile(r'(?a);(?P<pan>\d{8,19})=(?P<exp>\d{4})(?P<svc>\d{3})(?P<dd2>.*?)\?')
@@ -73,6 +77,14 @@ class ShadyBucksAPIDaemon:
         # Admin APIs
         self._app.add_routes([web.post('/api/activate', self.post_activate)])
 
+        # SAML SP
+        self._saml_settings = load_saml_settings()
+        self._app.add_routes([web.post('/api/saml/acs', self.post_saml_acs)])
+        self._app.add_routes([web.get('/api/saml/accts', self.get_saml_accts)])
+        self._app.add_routes([web.post('/api/saml/select_acct', self.post_saml_select_acct)])
+        self._app.add_routes([web.post('/api/saml/new_acct', self.post_saml_new_acct)])
+        self._app.add_routes([web.post('/api/saml/bind_acct', self.post_saml_bind_acct)])
+
     async def _init_db_pool(self):
         self._psql_pool = await asyncpg.create_pool(database='shadybucks')
         self._redis_pool = aioredis.from_url("redis://redis", decode_responses=True)
@@ -80,13 +92,133 @@ class ShadyBucksAPIDaemon:
     def run(self, path):
         asyncio.get_event_loop().run_until_complete(self._init_db_pool())
         web.run_app(self._app, path=path)
-
+        
     async def handle_login_success(self, request, auth_row):
         auth_token = secrets.token_urlsafe()
         await self._psql_pool.execute('UPDATE secrets SET last_used = NOW() where id = $1', auth_row['id'])
         await self._redis_pool.setex('auth_token:{}'.format(auth_token), 2592000, auth_row['account_id'])
-        resp = web.Response(status=201, text=auth_token)
+        return web.Response(status=201, text=auth_token)
+
+    async def _upsert_saml_customer(self, shadytel_customer_id, name):
+        row = await self._psql_pool.fetchrow(
+            'SELECT id, name FROM customers WHERE shadytel_customer_id = $1',
+            shadytel_customer_id)
+        if row:
+            if name and name != row['name']:
+                await self._psql_pool.execute(
+                    'UPDATE customers SET name = $2, last_updated = NOW() WHERE id = $1',
+                    row['id'], name)
+                return row['id']
+            return row['id']
+        row = await self._psql_pool.fetchrow(
+            'INSERT INTO customers (shadytel_customer_id, name) VALUES ($1, $2) RETURNING id',
+            shadytel_customer_id, name or 'Shadytel Customer %d' % shadytel_customer_id)
+        return row['id']
+
+    async def post_saml_acs(self, request):
+        post_data = await request.post()
+        req = prepare_saml_request(request, post_data)
+        auth = OneLogin_Saml2_Auth(req, self._saml_settings)
+        auth.process_response()
+
+        errors = auth.get_errors()
+        if errors:
+            reason = auth.get_last_error_reason() or ''
+            raise web.HTTPBadRequest(text='SAML error: %s %s' % (', '.join(errors), reason))
+
+        if not auth.is_authenticated():
+            raise web.HTTPUnauthorized(text='SAML authentication failed')
+
+        try:
+            shadytel_customer_id = int(auth.get_nameid())
+        except (TypeError, ValueError):
+            raise web.HTTPBadRequest(text='SAML NameID must be a numeric shadytel_customer_id')
+
+        name = saml_attribute_name(auth)
+        customer_id = await self._upsert_saml_customer(shadytel_customer_id, name)
+
+        saml_token = secrets.token_urlsafe()
+        await self._redis_pool.setex(
+            'saml_token:%s' % saml_token,
+            SAML_SESSION_TTL,
+            json.dumps({
+                'customer_id': customer_id,
+                'shadytel_customer_id': shadytel_customer_id,
+                'name': name,
+            }))
+
+        resp = web.Response(status=201, text=saml_token)
         return resp
+
+    async def _get_saml_customer(self, request):
+        saml_token = self._get_request_auth_token(request)
+        saml_session = await self._redis_pool.get('saml_token:{}'.format(saml_token))
+        if saml_session:
+            return json.loads(saml_session)['customer_id']
+        raise web.HTTPUnauthorized()
+
+    async def get_saml_accts(self, request):
+        customer_id = await self._get_saml_customer(request)
+        accts = await self._psql_pool.fetch('SELECT id, name FROM accounts WHERE customer_id = $1', int(customer_id))
+        return web.json_response([dict(acct) for acct in accts])
+
+    async def post_saml_select_acct(self, request):
+        customer_id = await self._get_saml_customer(request)
+        args = await request.post()
+        acct_id = int(args['acct_id'])
+        acct = await self._psql_pool.fetch('SELECT * FROM accounts WHERE customer_id = $1 AND id = $2', customer_id, acct_id)
+        if acct:
+            auth_token = secrets.token_urlsafe()
+            await self._redis_pool.setex('auth_token:{}'.format(auth_token), 2592000, acct_id)
+            return web.Response(status=201, text=auth_token)
+        raise web.HTTPUnauthorized()
+
+    def _append_luhn_check_digit(self, payload):
+        """Computes and appends the missing Luhn check digit for a given payload string."""
+        # Reverse payload because Luhn operates from right to left
+        digits = [int(d) for d in reversed(payload)]
+        
+        total_sum = 0
+        for i, digit in enumerate(digits):
+            # Since the check digit will be at index 0 of the final number,
+            # the payload's rightmost digit becomes the first doubled digit (index 0 here)
+            if i % 2 == 0:
+                doubled = digit * 2
+                # Subtract 9 if the doubled number is greater than 9
+                total_sum += doubled if doubled < 10 else doubled - 9
+            else:
+                total_sum += digit
+                
+        # Calculate the digit needed to make the total sum a multiple of 10
+        luhn_check_digit = (10 - (total_sum % 10)) % 10
+        return payload + str(luhn_check_digit)
+
+    async def post_saml_new_acct(self, request):
+        customer_id = await self._get_saml_customer(request)
+        args = await request.post()
+        accts = (await self._psql_pool.fetchrow('SELECT COUNT(*) FROM accounts WHERE customer_id = $1', customer_id))[0]
+        if accts:
+            raise web.HTTPUnauthorized(text="You already have an existing Shadybucks account. Please contact BUXX for additional accounts.")
+        new_acct_id = (await self._psql_pool.fetchrow('INSERT INTO accounts (customer_id, name) VALUES ($1, $2) RETURNING id', customer_id, args['name']))[0]
+        new_totp_secret = base64.b32encode(secrets.token_bytes(20)).decode('utf-8')
+        await self._psql_pool.execute('INSERT INTO secrets (account_id, type, secret) VALUES ($1, \'totp\', $2)', new_acct_id, new_totp_secret)
+        new_acct_pan = self._append_luhn_check_digit(f'899798667{new_acct_id:06d}')
+        dd1 = base64.b32encode(secrets.token_bytes(5)).decode('utf-8')
+        dd2 = f'{secrets.randbelow(100000000):08d}'
+        await self._psql_pool.execute('INSERT INTO cards (pan, account_id, name, expires, status, dd1, dd2) VALUES ($1, $2, $3, $4, $5, $6, $7)', new_acct_pan, new_acct_id, args['name'], '3801', 'activated', dd1, dd2)
+        auth_token = secrets.token_urlsafe()
+        await self._redis_pool.setex('auth_token:{}'.format(auth_token), 2592000, new_acct_id)
+        return web.json_response({ 'pan': new_acct_pan, 'totp_secret': new_totp_secret, 'auth_token': auth_token }, status=201)
+
+    async def post_saml_bind_acct(self, request):
+        auth_response = await self.post_login(request)
+        if auth_response.status == 201:
+            auth_token = auth_response.text
+            acct_id = await self._redis_pool.get('auth_token:{}'.format(auth_token))
+            customer_id = await self._get_saml_customer(request)
+            await self._psql_pool.execute('UPDATE accounts SET customer_id = $2 WHERE id = $1', int(acct_id), customer_id)
+            return auth_response
+        raise web.HTTPUnauthorized()
 
     def _get_request_auth_token(self, request):
         if not 'Authorization' in request.headers:
@@ -103,7 +235,7 @@ class ShadyBucksAPIDaemon:
         val = await self._redis_pool.incr(key)
         await self._redis_pool.expire(key, expiration_in_secs)
         if val > limit:
-            raise web.HTTPUnauthorized()
+            raise web.HTTPUnauthorized(text="Rate limit exceeded")
         
     async def _check_otp_ratelimit(self, pan):
         key = 'otp:{}'.format(pan)
@@ -325,16 +457,16 @@ class ShadyBucksAPIDaemon:
             raise web.HTTPForbidden(text="Voice auth required. Call BUXX and ask for a Code 10 authorization.")
         if card_data['status'] != 'activated':
             raise web.HTTPForbidden()
-        cust_data = await self._get_account_data(card_data['account'])
-        if amount > cust_data['available']:
-            raise web.HTTPForbidden()
+        cust_id = card_data['account']
         auth_code = str(secrets.randbelow(1000000)).zfill(6)
         async with self._psql_pool.acquire() as con:
             async with con.transaction():
+                held = await con.fetchrow('UPDATE accounts SET available = available - $1, last_updated = NOW() ' \
+                    'WHERE id = $2 AND available >= $1 RETURNING id', amount, cust_id)
+                if not held:
+                    raise web.HTTPForbidden()
                 await con.execute('INSERT INTO authorizations (pan, auth_code, debit_account, credit_account, authorized_debit_amount) ' \
-                    'VALUES($1, $2, $3, $4, $5)', card_data['card']['pan'], auth_code, cust_data['id'], merchant_data['id'], amount);
-                await con.execute('UPDATE accounts SET available = available - $1, last_updated = NOW() WHERE id = $2',
-                    amount, cust_data['id'])
+                    'VALUES($1, $2, $3, $4, $5)', card_data['card']['pan'], auth_code, cust_id, merchant_data['id'], amount)
         return web.Response(text=auth_code)
 
     async def post_capture(self, request):
@@ -377,14 +509,14 @@ class ShadyBucksAPIDaemon:
         merchant_data = await self._get_account_data(await self._get_auth_account(request))
         async with self._psql_pool.acquire() as con:
             async with con.transaction():
-                auth_row = await con.fetchrow('SELECT * from authorizations WHERE credit_account = $1 ' \
-                    'AND auth_code = $2 AND status = \'pending\'',
+                released = await con.fetchrow('UPDATE authorizations SET status = \'voided\' ' \
+                    'WHERE credit_account = $1 AND auth_code = $2 AND status = \'pending\' ' \
+                    'RETURNING debit_account, authorized_debit_amount',
                     merchant_data['id'], args['auth_code'])
-                if not auth_row:
+                if not released:
                     raise web.HTTPNotFound()
-                await con.execute('UPDATE authorizations set status = \'voided\' WHERE id = $1', auth_row['id']);
                 await con.execute('UPDATE accounts SET available = available + $1, last_updated = NOW() WHERE id = $2',
-                    auth_row['authorized_debit_amount'], auth_row['debit_account'])
+                    released['authorized_debit_amount'], released['debit_account'])
         return web.Response(status=204)
 
     async def post_reverse(self, request):
@@ -429,9 +561,7 @@ class ShadyBucksAPIDaemon:
         amount = round(float(args['amount']), 2)
         if amount <= 0:
             raise web.HTTPBadRequest()
-        merchant_data = await self._get_account_data(await self._get_auth_account(request))
-        if merchant_data['available'] < amount and (not (merchant_data['partner'] or merchant_data['admin'] or merchant_data['special'])):
-            raise web.HTTPForbidden()
+        merchant_id = await self._get_auth_account(request)
 
         card_data = {}
 
@@ -449,22 +579,26 @@ class ShadyBucksAPIDaemon:
         else:
             raise web.HTTPBadRequest()
 
-        cust_data = await self._get_account_data(card_data['account'])
+        cust_id = card_data['account']
         async with self._psql_pool.acquire() as con:
             async with con.transaction():
-                await con.execute('UPDATE accounts SET balance = balance - $1, ' \
-                    'available = available - $1, last_updated = NOW() WHERE id = $2',
-                    amount, merchant_data['id'])
+                await con.fetchrow('SELECT id FROM accounts WHERE id = $1 FOR UPDATE', merchant_id)
+                debited = await con.fetchrow('UPDATE accounts SET balance = balance - $1, ' \
+                    'available = available - $1, last_updated = NOW() WHERE id = $2 AND ' \
+                    '(partner OR admin OR special OR available >= $1) RETURNING id',
+                    amount, merchant_id)
+                if not debited:
+                    raise web.HTTPForbidden()
                 await con.execute('UPDATE accounts SET balance = balance + $1, ' \
                     'available = available + $1, last_updated = NOW() WHERE id = $2',
-                    amount, cust_data['id'])
+                    amount, cust_id)
                 if 'description' in args:
                     description = args['description']
                 else:
                     description = None
                 await con.execute('INSERT INTO transactions (debit_account, credit_account, amount, pan, ' \
-                    'type, description) VALUES($1, $2, $3, $4, $5, $6)', merchant_data['id'],
-                    cust_data['id'], amount, card_data['card']['pan'], "credit_points", description)
+                    'type, description) VALUES($1, $2, $3, $4, $5, $6)', merchant_id,
+                    cust_id, amount, card_data['card']['pan'], "credit_points", description)
         return web.Response(status=204)
 
     async def post_nfc_challenge(self, request):
@@ -567,16 +701,15 @@ class ShadyBucksAPIDaemon:
             "a22b00000000",
 
             # Write CTF flags
-            "a2246B65793D",
-            "a2257B585858",
-            "a22658585858",
-            "a2275858587D",
+            # "a2246B65793D",
+            # "a2257B585858",
+            # "a22658585858",
+            # "a2275858587D",
 
             # Write NDEF container
             # "a203e1101000",
             # "a2040304d800",
             # "a2050000fe00",
-            "a203e1101000",
             "a2040321d101",
             "a2051d550068",
             "a20674747073",
@@ -588,31 +721,53 @@ class ShadyBucksAPIDaemon:
             "a20c586351fe",
             "a20d00000000",
 
+            # OTP (may fail)
+            "a203e1101200",
+
             # Write CTF hint
-            "a21800000068",
-            "a21974747073",
-            "a21a3A2F2F65",
-            "a21b7570686F",
-            "a21c7269612D",
-            "a21d6374662E",
-            "a21e636F6D2F",
-            "a21f7B777231",
-            "a22073746234",
-            "a2216E645F61",
-            "a22263633373",
-            "a223737D2F3F",
+            # "a21800000068",
+            # "a21974747073",
+            # "a21a3A2F2F65",
+            # "a21b7570686F",
+            # "a21c7269612D",
+            # "a21d6374662E",
+            # "a21e636F6D2F",
+            # "a21f7B777231",
+            # "a22073746234",
+            # "a2216E645F61",
+            # "a22263633373",
+            # "a223737D2F3F",
         ])
         return web.json_response({ "cmds": cmds })
 
     async def post_nfc_link(self, request):
         args = await request.post()
-        card_data = await self._get_account_from_magstripe(args)
+        auth_response = await self.post_login(request)
+        if auth_response.status == 201:
+            auth_token = auth_response.text
+            acct_id = await self._redis_pool.get('auth_token:{}'.format(auth_token))
+
         nfc_token = args['nfc_token']
         uid = await self._redis_pool.get(f'nfc_token:{nfc_token}')
         await self._redis_pool.delete(f'nfc_token:{nfc_token}')
 
-        await self._psql_pool.execute('INSERT INTO cards (pan, account_id, name, expires, status) VALUES ($1, $2, $3, $4, $5)',
-                                      uid, card_data['account'], card_data['card']['name'], '0000', card_data['status'])
+        # amount = 500.00
+
+        # async with self._psql_pool.acquire() as con:
+        #     async with con.transaction():
+        #         await con.execute('INSERT INTO cards (pan, account_id, name, expires, status) VALUES ($1, $2, $3, $4, $5)',
+        #                               uid, acct_id, 'SHADYBUCKS CUSTOMER', '0000', 'activated')
+        #         await con.execute('UPDATE accounts SET balance = balance - $1, ' \
+        #             'available = available - $1, last_updated = NOW() WHERE id = $2',
+        #             amount, 1)
+        #         await con.execute('UPDATE accounts SET balance = balance + $1, ' \
+        #             'available = available + $1, last_updated = NOW() WHERE id = $2',
+        #             amount, acct_id)
+        #         description = 'TOORCAMP 2026 WELCOME BONUS'
+        #         await con.execute('INSERT INTO transactions (debit_account, credit_account, amount, pan, ' \
+        #             'type, description) VALUES($1, $2, $3, $4, $5, $6)', 1,
+        #             acct_id, amount, uid, "credit_points", description)
+
         return web.Response(status=204)
 
     async def post_activate(self, request):

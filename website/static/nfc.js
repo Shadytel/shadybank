@@ -17,7 +17,7 @@ async function handleAppMsg(event) {
     uid = msg.uid;
     // Initiate mutual auth
     tagAuthState = 1;
-    appPort.postMessage("{'msg': 'tagTransceive', 'txData': '1a00'}");
+    //appPort.postMessage("{'msg': 'tagTransceive', 'txData': '1a00'}");
   } else if (msg.msg == "tagTransceiveResp") {
     if (tagAuthState == 1) {
       chal = msg.rxData.substring(2);
