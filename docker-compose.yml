@@ -13,6 +13,7 @@ services:
       context: .
       dockerfile: ./Dockerfile.api
     environment:
+      SHADYBANK_MEMBER_SERVICE_KEY: ${SHADYBANK_MEMBER_SERVICE_KEY:-}
       PGHOST: db
       PGUSER: shadybucks
       PGPASSWORD: N9aj8vtIaaYsAY52gdSXjOdgdzY8BTiN

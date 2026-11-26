@@ -16,12 +16,23 @@ create type secrets_type as enum ('pin', 'password', 'totp', 'webauthn', 'shopt'
 create table secrets (id serial primary key, account_id int, type secrets_type, secret text, created_at timestamp 
 not null default NOW(), last_used timestamp, constraint fk_account_id foreign key (account_id) references accounts(id));
 
-create type trans_type as enum ('credit_points', 'purchase', 'refund');
+create type trans_type as enum ('credit_points', 'purchase', 'refund', 'member_transfer');
 
 create table transactions (id serial primary key, timestamp timestamp not null default NOW(), debit_account integer not null, credit_account 
 integer not null, amount numeric(8,2) not null, pan varchar(19), auth_code varchar(6), type trans_type not null, related_transaction int,
 description text, constraint fk_debit_aid foreign key (debit_account) references accounts(id),
 constraint fk_credit_aid foreign key (credit_account) references accounts(id));
+
+create table member_transfers (
+    sender_account integer not null references accounts(id),
+    request_id uuid not null,
+    recipient_account integer not null references accounts(id),
+    amount numeric(8,2) not null check (amount > 0),
+    transaction_id integer not null unique references transactions(id),
+    created_at timestamp not null default NOW(),
+    primary key(sender_account, request_id),
+    check (sender_account <> recipient_account)
+);
 
 create type auth_status as enum ('pending', 'posted', 'reversed', 'voided', 'expired');
 
