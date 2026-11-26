@@ -1,0 +1,29 @@
+name: Member API
+on:
+  pull_request:
+  push:
+    branches: [trunk]
+permissions:
+  contents: read
+jobs:
+  member-api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: membertest
+          POSTGRES_PASSWORD: synthetic-test-only
+          POSTGRES_DB: membertest
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      SHADYBANK_TEST_DSN: postgresql://membertest:synthetic-test-only@127.0.0.1:5432/membertest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install aiohttp==3.11.13 asyncpg==0.30.0 passlib==1.7.4 argon2-cffi==23.1.0
+      - run: python -m unittest discover -s tests -v

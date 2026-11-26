@@ -20,6 +20,7 @@ from datetime import timedelta
 from onelogin.saml2.auth import OneLogin_Saml2_Auth
 
 from saml_support import SAML_SESSION_TTL, load_saml_settings, prepare_saml_request, saml_attribute_name
+from member_api import MemberAPI
 
 track1_re = re.compile(r'(?a)%B(?P<pan>\d{8,19})\^(?P<name>.*)\^(?P<exp>\d{4})(?P<svc>\d{3})(?P<dd1>.*?)\?')
 track2_re = re.compile(r'(?a);(?P<pan>\d{8,19})=(?P<exp>\d{4})(?P<svc>\d{3})(?P<dd2>.*?)\?')
@@ -84,6 +85,7 @@ class ShadyBucksAPIDaemon:
         self._app.add_routes([web.post('/api/saml/select_acct', self.post_saml_select_acct)])
         self._app.add_routes([web.post('/api/saml/new_acct', self.post_saml_new_acct)])
         self._app.add_routes([web.post('/api/saml/bind_acct', self.post_saml_bind_acct)])
+        self._member_api = MemberAPI(self)
 
     async def _init_db_pool(self):
         self._psql_pool = await asyncpg.create_pool(database='shadybucks')
